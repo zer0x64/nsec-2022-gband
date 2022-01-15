@@ -3,7 +3,7 @@
 extern crate alloc;
 
 #[macro_use]
-mod bus;
+pub mod bus; // TODO: Revert pub added for criterion
 
 mod cartridge;
 mod joypad_state;
@@ -21,16 +21,17 @@ use cartridge::Cartridge;
 
 const WRAM_BANK_SIZE: u16 = 0x400;
 
+// TODO: Revert pub added for criterion
 pub struct Emulator {
     // == Cartridge Related Hardware== //
-    cartridge: Cartridge,
+    pub cartridge: Cartridge,
 
     // == CPU Related Hardware == //
-    cpu: Cpu,
-    wram: [u8; WRAM_BANK_SIZE as usize * 4],
+    pub cpu: Cpu,
+    pub wram: [u8; WRAM_BANK_SIZE as usize * 4],
 
     // == PPU Related Hardware == //
-    ppu: Ppu,
+    pub ppu: Ppu,
 
     // == IP Related Hardware == //
 
@@ -39,7 +40,7 @@ pub struct Emulator {
     joypad_register: u8,
 
     // == Emulation Specific Data == //
-    clock_count: u8,
+    pub clock_count: u8,
 }
 
 impl Emulator {

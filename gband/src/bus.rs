@@ -3,6 +3,8 @@ use crate::JoypadState;
 use crate::Ppu;
 use crate::WRAM_BANK_SIZE;
 
+// TODO: Revert macro_export added for criterion
+#[macro_export]
 macro_rules! borrow_cpu_bus {
     ($owner:ident) => {{
         $crate::bus::CpuBus::borrow(&mut $owner.wram,
