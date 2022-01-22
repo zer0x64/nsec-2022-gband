@@ -17,21 +17,21 @@ pub use joypad_state::JoypadState;
 pub use cpu::Cpu;
 pub use ppu::{Frame, Ppu, FRAME_HEIGHT, FRAME_WIDTH};
 
-use cartridge::Cartridge;
+// TODO: Revert pub added for criterion
+pub use cartridge::Cartridge;
 
 const WRAM_BANK_SIZE: u16 = 0x400;
 
-// TODO: Revert pub added for criterion
 pub struct Emulator {
     // == Cartridge Related Hardware== //
-    pub cartridge: Cartridge,
+    cartridge: Cartridge,
 
     // == CPU Related Hardware == //
-    pub cpu: Cpu,
-    pub wram: [u8; WRAM_BANK_SIZE as usize * 4],
+    cpu: Cpu,
+    wram: [u8; WRAM_BANK_SIZE as usize * 4],
 
     // == PPU Related Hardware == //
-    pub ppu: Ppu,
+    ppu: Ppu,
 
     // == IP Related Hardware == //
 
@@ -40,7 +40,7 @@ pub struct Emulator {
     joypad_register: u8,
 
     // == Emulation Specific Data == //
-    pub clock_count: u8,
+    clock_count: u8,
 }
 
 impl Emulator {
@@ -121,7 +121,8 @@ impl Emulator {
 
 #[test]
 fn test() {
-    let rom = [0u8; 10];
+    let mut rom = [0u8; 0x150];
+    rom[0x14d] = 231;
     let mut emu = Emulator::new(&rom, None).unwrap();
 
     for _ in 0..10 {

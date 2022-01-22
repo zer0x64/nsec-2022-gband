@@ -3,7 +3,8 @@ mod decoder;
 use bitflags::bitflags;
 
 use crate::bus::CpuBus;
-use decoder::{Opcode, Register, RegisterPair};
+use decoder::{Opcode, OpMemAddress16, Register, RegisterPair};
+use crate::cpu::decoder::OpMemAddress8;
 
 bitflags! {
     pub struct FlagRegister: u8 {
@@ -94,13 +95,13 @@ impl Cpu {
         }
     }
 
+    // TODO: Remove pub added for criterion
     pub fn fetch(&mut self, bus: &mut CpuBus) {
-        self.opcode_latch = Opcode::from_u8(bus.read_ram(self.pc));
-        self.pc = self.pc.wrapping_add(1);
-
+        self.opcode_latch = Opcode::from(self.read_immediate(bus));
         self.cycles = self.opcode_latch.cycles();
     }
 
+    // TODO: Remove pub added for criterion
     pub fn execute(&mut self, bus: &mut CpuBus) {
         // In Z80 / GB, unknown instructions are just noop
         match self.opcode_latch {
@@ -111,23 +112,84 @@ impl Cpu {
                 self.set_register(target, self.get_register(source));
             }
             Opcode::LdRImm(target) => {
-                let immediate = bus.read_ram(self.pc);
-                self.pc = self.pc.wrapping_add(1);
+                let immediate = self.read_immediate(bus);
                 self.set_register(target, immediate);
             }
             Opcode::LdRMem(target, source) => {
-                let val = bus.read_ram(self.get_register_pair(source));
+                let val = match source {
+                    OpMemAddress16::Register(source) => {
+                        bus.read_ram(self.get_register_pair(source))
+                    }
+                    OpMemAddress16::RegisterIncrease(source) => {
+                        let reg = self.get_register_pair(source);
+                        self.set_register_pair(source, reg.wrapping_add(1));
+                        bus.read_ram(reg)
+                    }
+                    OpMemAddress16::RegisterDecrease(source) => {
+                        let reg = self.get_register_pair(source);
+                        self.set_register_pair(source, reg.wrapping_sub(1));
+                        bus.read_ram(reg)
+                    }
+                    OpMemAddress16::Immediate => {
+                        let lsb = self.read_immediate(bus) as u16;
+                        let msb = self.read_immediate(bus) as u16;
+                        bus.read_ram((msb << 8) | lsb)
+                    }
+                };
+
                 self.set_register(target, val);
             }
             Opcode::LdMemR(target, source) => {
-                bus.write_ram(self.get_register_pair(target), self.get_register(source));
+                let addr = match target {
+                    OpMemAddress16::Register(target) => {
+                        self.get_register_pair(target)
+                    }
+                    OpMemAddress16::RegisterIncrease(target) => {
+                        let reg = self.get_register_pair(target);
+                        self.set_register_pair(target, reg.wrapping_add(1));
+                        reg
+                    }
+                    OpMemAddress16::RegisterDecrease(target) => {
+                        let reg = self.get_register_pair(target);
+                        self.set_register_pair(target, reg.wrapping_sub(1));
+                        reg
+                    }
+                    OpMemAddress16::Immediate => {
+                        let lsb = self.read_immediate(bus) as u16;
+                        let msb = self.read_immediate(bus) as u16;
+                        (msb << 8) | lsb
+                    }
+                };
+
+                bus.write_ram(addr, self.get_register(source));
             }
             Opcode::LdMemImm(target) => {
-                let immediate = bus.read_ram(self.pc);
-                self.pc = self.pc.wrapping_add(1);
+                let immediate = self.read_immediate(bus);
                 bus.write_ram(self.get_register_pair(target), immediate);
             }
+            Opcode::LdhRead(target, source) => {
+                let addr = 0xFF00 | match source {
+                    OpMemAddress8::Register(source) => self.get_register(source),
+                    OpMemAddress8::Immediate => self.read_immediate(bus),
+                } as u16;
+
+                self.set_register(target, bus.read_ram(addr));
+            }
+            Opcode::LdhWrite(target, source) => {
+                let addr = 0xFF00 | match target {
+                    OpMemAddress8::Register(target) => self.get_register(target),
+                    OpMemAddress8::Immediate => self.read_immediate(bus),
+                } as u16;
+
+                bus.write_ram(addr, self.get_register(source));
+            }
         }
+    }
+
+    fn read_immediate(&mut self, bus: &mut CpuBus) -> u8 {
+        let immediate = bus.read_ram(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+        immediate
     }
 
     fn get_register(&self, reg: Register) -> u8 {
@@ -182,5 +244,113 @@ impl Cpu {
                 self.f.bits = (val & 0x00F0) as u8
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Cartridge;
+    use crate::Ppu;
+    use crate::RomParserError;
+    use crate::WRAM_BANK_SIZE;
+    use alloc::vec;
+
+    struct MockEmulator {
+        pub cartridge: Cartridge,
+        pub cpu: Cpu,
+        pub wram: [u8; WRAM_BANK_SIZE as usize * 4],
+        pub ppu: Ppu,
+    }
+
+    impl MockEmulator {
+        pub fn new() -> Result<Self, RomParserError> {
+            let mut rom = vec![0; 0x200];
+            rom[0x14d] = 231;
+            let cartridge = Cartridge::load(&rom, None)?;
+
+            let emulator = Self {
+                cartridge,
+                cpu: Default::default(),
+                wram: [0u8; WRAM_BANK_SIZE as usize * 4],
+                ppu: Default::default(),
+            };
+
+            Ok(emulator)
+        }
+    }
+
+    /// Executes `n` instructions and returns
+    fn execute_n(emu: &mut MockEmulator, n: usize) {
+        let mut bus = borrow_cpu_bus!(emu);
+        for _ in 0..n {
+            loop {
+                // Because of the fetch-execute overlap, running the last cycle fetches the next
+                // instruction. We need to run and break in this case to go to the next n
+                if emu.cpu.cycles == 1 {
+                    emu.cpu.clock(&mut bus);
+                    break;
+                } else {
+                    emu.cpu.clock(&mut bus);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_ld_rr() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.wram[0] = 0x40; // B,B
+        emu.wram[1] = 0x41; // B,C
+        emu.wram[2] = 0x42; // B,D
+        emu.wram[3] = 0x43; // B,E
+        emu.wram[4] = 0x44; // B,H
+        emu.wram[5] = 0x45; // B,L
+        emu.wram[6] = 0x47; // B,A
+        emu.wram[7] = 0x78; // A,B
+        emu.wram[8] = 0x60; // H,B
+        emu.wram[9] = 0x6A; // L,D
+
+        emu.cpu.b = 1;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 1);
+
+        emu.cpu.c = 2;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 2);
+
+        emu.cpu.d = 3;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 3);
+
+        emu.cpu.e = 4;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 4);
+
+        emu.cpu.h = 5;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 5);
+
+        emu.cpu.l = 6;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 6);
+
+        emu.cpu.a = 7;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.b, 7);
+
+        emu.cpu.b = 20;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.a, 20);
+
+        emu.cpu.b = 21;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.h, 21);
+
+        emu.cpu.d = 30;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.l, 30);
     }
 }
