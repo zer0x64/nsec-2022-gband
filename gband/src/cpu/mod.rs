@@ -183,6 +183,38 @@ impl Cpu {
 
                 bus.write_ram(addr, self.get_register(source));
             }
+            Opcode::Ld16RImm(target) => {
+                let lsb = self.read_immediate(bus) as u16;
+                let msb = self.read_immediate(bus) as u16;
+
+                // TODO: This affects SP, not AF. Should add SP to enum and add custom try_from
+                self.set_register_pair(target, (msb << 8) | lsb);
+            }
+            Opcode::Ld16MemSp => {
+                let lsb = self.read_immediate(bus) as u16;
+                let msb = self.read_immediate(bus) as u16;
+                let addr = (msb << 8) | lsb;
+                bus.write_ram(addr, (self.sp & 0x00FF) as u8);
+                bus.write_ram(addr + 1, ((self.sp & 0xFF00) >> 8) as u8);
+
+            }
+            Opcode::Ld16SpHL => {
+                self.sp = self.get_register_pair(RegisterPair::HL);
+            }
+            Opcode::Push(source) => {
+                let source = self.get_register_pair(source);
+                self.sp = self.sp.wrapping_sub(1);
+                bus.write_ram(self.sp, ((source & 0xFF00) >> 8) as u8);
+                self.sp = self.sp.wrapping_sub(1);
+                bus.write_ram(self.sp, (source & 0x00FF) as u8);
+            }
+            Opcode::Pop(target) => {
+                let lsb = bus.read_ram(self.sp) as u16;
+                self.sp = self.sp.wrapping_add(1);
+                let msb = bus.read_ram(self.sp) as u16;
+                self.sp = self.sp.wrapping_add(1);
+                self.set_register_pair(target, (msb << 8) | lsb);
+            }
         }
     }
 
@@ -221,6 +253,7 @@ impl Cpu {
             RegisterPair::BC => ((self.b as u16) << 8) | (self.c as u16),
             RegisterPair::DE => ((self.d as u16) << 8) | (self.e as u16),
             RegisterPair::HL => ((self.h as u16) << 8) | (self.l as u16),
+            RegisterPair::SP => self.sp,
             RegisterPair::AF => ((self.a as u16) << 8) | ((self.f.bits & 0xF0) as u16),
         }
     }
@@ -238,6 +271,9 @@ impl Cpu {
             RegisterPair::HL => {
                 self.h = ((val & 0xFF00) >> 8) as u8;
                 self.l = (val & 0x00FF) as u8
+            }
+            RegisterPair::SP => {
+                self.sp = val;
             }
             RegisterPair::AF => {
                 self.a = ((val & 0xFF00) >> 8) as u8;
@@ -352,5 +388,80 @@ mod tests {
         emu.cpu.d = 30;
         execute_n(&mut emu, 1);
         assert_eq!(emu.cpu.l, 30);
+    }
+
+    #[test]
+    fn test_ld_r_imm() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.wram[0] = 0x06; // B,n
+        emu.wram[1] = 1;
+        emu.wram[2] = 0x3E; // A,n
+        emu.wram[3] = 255;
+
+        execute_n(&mut emu, 2);
+        assert_eq!(emu.cpu.b, 1);
+        assert_eq!(emu.cpu.a, 255);
+    }
+
+    #[test]
+    fn test_ld16_r_imm() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.wram[0] = 0x01; // BC,nn
+        emu.wram[1] = 0x10; // lsb
+        emu.wram[2] = 0x20; // msb
+        emu.wram[3] = 0x11; // DE,nn
+        emu.wram[4] = 0x30; // lsb
+        emu.wram[5] = 0x40; // msb
+        emu.wram[6] = 0x21; // HL,nn
+        emu.wram[7] = 0x50; // lsb
+        emu.wram[8] = 0x60; // msb
+        emu.wram[9] = 0x31; // SP,nn
+        emu.wram[10] = 0x70; // lsb
+        emu.wram[11] = 0x80; // msb
+
+        execute_n(&mut emu, 4);
+        assert_eq!(emu.cpu.b, 0x20);
+        assert_eq!(emu.cpu.c, 0x10);
+        assert_eq!(emu.cpu.d, 0x40);
+        assert_eq!(emu.cpu.e, 0x30);
+        assert_eq!(emu.cpu.h, 0x60);
+        assert_eq!(emu.cpu.l, 0x50);
+        assert_eq!(emu.cpu.sp, 0x8070);
+    }
+
+    #[test]
+    fn test_push() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.wram[0] = 0xC5; // BC
+
+        emu.cpu.sp = 0x500;
+        emu.cpu.b = 0x10;
+        emu.cpu.c = 0x20;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.sp, 0x4FE);
+        assert_eq!(emu.wram[0x4FF], 0x10);
+        assert_eq!(emu.wram[0x4FE], 0x20);
+    }
+
+    #[test]
+    fn test_pop() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.wram[0] = 0xC1; // BC
+        emu.wram[0x4FE] = 0x20;
+        emu.wram[0x4FF] = 0x10;
+
+        emu.cpu.sp = 0x4FE;
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.sp, 0x500);
+        assert_eq!(emu.cpu.b, 0x10);
+        assert_eq!(emu.cpu.c, 0x20);
     }
 }

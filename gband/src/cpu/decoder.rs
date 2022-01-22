@@ -19,7 +19,8 @@ pub enum RegisterPair {
     BC = 0,
     DE = 1,
     HL = 2,
-    AF = 3,
+    SP = 3,
+    AF = 4, // Only used in Push and Pop, otherwise SP is used. Can't use the same int in rust
 }
 
 #[derive(Clone, Copy)]
@@ -46,6 +47,11 @@ pub enum Opcode {
     LdMemImm(RegisterPair),
     LdhRead(Register, OpMemAddress8),
     LdhWrite(OpMemAddress8, Register),
+    Ld16RImm(RegisterPair),
+    Ld16MemSp,
+    Ld16SpHL,
+    Push(RegisterPair),
+    Pop(RegisterPair),
 }
 
 impl From<u8> for Opcode {
@@ -129,6 +135,31 @@ impl From<u8> for Opcode {
                 // Encoding: 11,100,000
                 Self::LdhWrite(OpMemAddress8::Immediate, Register::A)
             },
+            0x01 | 0x11 | 0x21 | 0x31 => {
+                // Encoding: 00,pp0,001 p: target reg16
+                let target = RegisterPair::try_from((op & 0b00110000) >> 4).expect("LD rr,nn: Unexpected target register");
+                Self::Ld16RImm(target)
+            },
+            0x08 => {
+                // Encoding: 00,001,000
+                Self::Ld16MemSp
+            }
+            0xF9 => {
+                // Encoding: 11,111,001
+                Self::Ld16SpHL
+            },
+            0xC5 | 0xD5 | 0xE5 | 0xF5 => {
+                // Encoding: 11,pp0,101 p: source reg16
+                // This uses AF for 3, not SP
+                let source = RegisterPair::try_from((op & 0b00110000) >> 4).expect("PUSH rr: Unexpected source register");
+                Self::Push(if let RegisterPair::SP = source { RegisterPair::HL } else { source })
+            },
+            0xC1 | 0xD1 | 0xE1 | 0xF1 => {
+                // Encoding: 11,pp0,001 p: target reg16
+                // This uses AF for 3, not SP
+                let target = RegisterPair::try_from((op & 0b00110000) >> 4).expect("POP rr: Unexpected target register");
+                Self::Pop(if let RegisterPair::SP = target { RegisterPair::HL } else { target })
+            },
             _ => Self::Unknown
         }
     }
@@ -165,6 +196,11 @@ impl Opcode {
                     OpMemAddress8::Immediate => 3
                 }
             }
+            Self::Ld16RImm(_) => 3,
+            Self::Ld16MemSp => 5,
+            Self::Ld16SpHL => 2,
+            Self::Push(_) => 4,
+            Self::Pop(_) => 3,
         }
     }
 }
