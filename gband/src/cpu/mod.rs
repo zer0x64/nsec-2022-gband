@@ -3,8 +3,7 @@ mod decoder;
 use bitflags::bitflags;
 
 use crate::bus::CpuBus;
-use decoder::{Opcode, OpMemAddress16, Register, RegisterPair};
-use crate::cpu::decoder::OpMemAddress8;
+use decoder::{Alu, Opcode, OpMemAddress8, OpMemAddress16, Register, RegisterPair};
 
 bitflags! {
     pub struct FlagRegister: u8 {
@@ -15,32 +14,6 @@ bitflags! {
         const Z = 0x80;
     }
 }
-
-/*#[derive(TryFromPrimitive, Clone, Copy)]
-#[repr(u8)]
-enum Alu {
-    AddA = 0,
-    AdcA = 1,
-    Sub = 2,
-    SbcA = 3,
-    And = 4,
-    Xor = 5,
-    Or = 6,
-    Cp = 7
-}
-
-#[derive(TryFromPrimitive, Clone, Copy)]
-#[repr(u8)]
-enum Rot {
-    Rlc = 0,
-    Rrc = 1,
-    Rl = 2,
-    Rr = 3,
-    Sla = 4,
-    Sra = 5,
-    Swap = 6,
-    Srl = 7
-}*/
 
 pub struct Cpu {
     pub b: u8,
@@ -215,6 +188,122 @@ impl Cpu {
                 self.sp = self.sp.wrapping_add(1);
                 self.set_register_pair(target, (msb << 8) | lsb);
             }
+            Opcode::AluR(alu_op, source) => {
+                let val = self.get_register(source);
+                self.run_alu(alu_op, val);
+            }
+            Opcode::AluImm(alu_op) => {
+                let val = self.read_immediate(bus);
+                self.run_alu(alu_op, val);
+            }
+            Opcode::AluMem(alu_op) => {
+                let val = bus.read_ram(self.get_register_pair(RegisterPair::HL));
+                self.run_alu(alu_op, val);
+            }
+            Opcode::IncR(source) => {
+                let val = self.get_register(source);
+                let result = val.wrapping_add(1);
+
+                self.f.set(FlagRegister::H, (val & 0x0F) + 1 > 0x0F);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, result == 0);
+                self.set_register(source, result);
+            }
+            Opcode::IncMem => {
+                let addr = self.get_register_pair(RegisterPair::HL);
+                let val = bus.read_ram(addr);
+                let result = val.wrapping_add(1);
+
+                self.f.set(FlagRegister::H, (val & 0x0F) + 1 > 0x0F);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, result == 0);
+                bus.write_ram(addr, result);
+            }
+            Opcode::DecR(source) => {
+                let val = self.get_register(source);
+                let result = val.wrapping_sub(1);
+
+                self.f.set(FlagRegister::H, (val & 0x0F) == 0);
+                self.f.set(FlagRegister::N, true);
+                self.f.set(FlagRegister::Z, result == 0);
+                self.set_register(source, result);
+            }
+            Opcode::DecMem => {
+                let addr = self.get_register_pair(RegisterPair::HL);
+                let val = bus.read_ram(addr);
+                let result = val.wrapping_sub(1);
+
+                self.f.set(FlagRegister::H, (val & 0x0F) == 0);
+                self.f.set(FlagRegister::N, true);
+                self.f.set(FlagRegister::Z, result == 0);
+                bus.write_ram(addr, result);
+            }
+            Opcode::Daa => {
+                let mut adjustment = if self.f.contains(FlagRegister::C)
+                    || (!self.f.contains(FlagRegister::N) && self.a > 0x99)
+                {
+                    0x60
+                } else {
+                    0
+                };
+
+                if self.f.contains(FlagRegister::H)
+                    || (!self.f.contains(FlagRegister::N) && (self.a & 0x0F) > 0x09)
+                {
+                    adjustment |= 0x06;
+                }
+
+                self.a = self.a.wrapping_sub(adjustment);
+                self.f.set(FlagRegister::C, adjustment >= 0x60);
+                self.f.set(FlagRegister::H, false);
+                self.f.set(FlagRegister::Z, self.a == 0);
+            }
+            Opcode::Cpl => {
+                self.a = self.a ^ 0xFF;
+                self.f.set(FlagRegister::H, true);
+                self.f.set(FlagRegister::N, true);
+            }
+            Opcode::Add16HL(source) => {
+                let val = self.get_register_pair(RegisterPair::HL);
+                let source = self.get_register_pair(source);
+                let (result, carry) = val.overflowing_add(source);
+                let half_carry = (val & 0x07FF) + (source & 0x07FF) > 0x07FF;
+
+                self.set_register_pair(RegisterPair::HL, result);
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, false);
+            }
+            Opcode::Add16SPSigned => {
+                // Reinterpret the immediate as signed, then convert to unsigned u16 equivalent
+                let immediate = self.read_immediate(bus) as i8 as i16 as u16;
+                let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
+                let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
+
+                self.sp = self.sp.wrapping_add(immediate);
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, false);
+            }
+            Opcode::Inc16R(source) => {
+                self.set_register_pair(source, self.get_register_pair(source).wrapping_add(1));
+            }
+            Opcode::Dec16R(source) => {
+                self.set_register_pair(source, self.get_register_pair(source).wrapping_sub(1));
+            }
+            Opcode::Ld16HLSPSigned => {
+                // Reinterpret the immediate as signed, then convert to unsigned u16 equivalent
+                let immediate = self.read_immediate(bus) as i8 as i16 as u16;
+                let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
+                let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
+
+                self.set_register_pair(RegisterPair::HL,self.sp.wrapping_add(immediate));
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, false);
+            }
         }
     }
 
@@ -222,6 +311,91 @@ impl Cpu {
         let immediate = bus.read_ram(self.pc);
         self.pc = self.pc.wrapping_add(1);
         immediate
+    }
+
+    fn run_alu(&mut self, alu_op: Alu, val: u8) {
+        match alu_op {
+            Alu::Add => {
+                let (result, carry) = self.a.overflowing_add(val);
+                let half_carry = (self.a & 0x0F) + (val & 0x0F) > 0x0F;
+
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, result == 0);
+                self.a = result;
+            }
+            Alu::Adc => {
+                let carry_flag = self.f.contains(FlagRegister::C) as u8;
+
+                // Would use carrying_add if it was in stable
+                let (r1, c1) = self.a.overflowing_add(val);
+                let (r2, c2) = r1.overflowing_add(carry_flag);
+                let (result, carry) = (r2, c1 | c2);
+                let half_carry = (self.a & 0x0F) + (val & 0x0F) + carry_flag > 0x0F;
+
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, result == 0);
+                self.a = result;
+            }
+            Alu::Sub => {
+                let (result, carry) = self.a.overflowing_sub(val);
+                let half_carry = (self.a & 0x0F) < (val & 0x0F);
+
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, true);
+                self.f.set(FlagRegister::Z, result == 0);
+                self.a = result;
+            }
+            Alu::Sbc => {
+                let carry_flag = self.f.contains(FlagRegister::C) as u8;
+
+                // Would use carrying_sub if it was in stable
+                let (r1, c1) = self.a.overflowing_sub(val);
+                let (r2, c2) = r1.overflowing_sub(carry_flag);
+                let (result, carry) = (r2, c1 | c2);
+                let half_carry = (self.a & 0x0F) < (val & 0x0F) + carry_flag;
+
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, true);
+                self.f.set(FlagRegister::Z, result == 0);
+                self.a = result;
+            }
+            Alu::And => {
+                self.a &= val;
+                self.f.set(FlagRegister::C, false);
+                self.f.set(FlagRegister::H, true);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, self.a == 0);
+            }
+            Alu::Xor => {
+                self.a ^= val;
+                self.f.set(FlagRegister::C, false);
+                self.f.set(FlagRegister::H, false);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, self.a == 0);
+            }
+            Alu::Or => {
+                self.a |= val;
+                self.f.set(FlagRegister::C, false);
+                self.f.set(FlagRegister::H, false);
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::Z, self.a == 0);
+            }
+            Alu::Cp => {
+                let (result, carry) = self.a.overflowing_sub(val);
+                let half_carry = (self.a & 0x0F) < (val & 0x0F);
+
+                self.f.set(FlagRegister::C, carry);
+                self.f.set(FlagRegister::H, half_carry);
+                self.f.set(FlagRegister::N, true);
+                self.f.set(FlagRegister::Z, result == 0);
+            }
+        }
     }
 
     fn get_register(&self, reg: Register) -> u8 {

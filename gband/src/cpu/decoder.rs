@@ -23,6 +23,32 @@ pub enum RegisterPair {
     AF = 4, // Only used in Push and Pop, otherwise SP is used. Can't use the same int in rust
 }
 
+#[derive(TryFromPrimitive, Clone, Copy)]
+#[repr(u8)]
+pub enum Alu {
+    Add = 0,
+    Adc = 1,
+    Sub = 2,
+    Sbc = 3,
+    And = 4,
+    Xor = 5,
+    Or = 6,
+    Cp = 7,
+}
+
+#[derive(TryFromPrimitive, Clone, Copy)]
+#[repr(u8)]
+enum Rot {
+    Rlc = 0,
+    Rrc = 1,
+    Rl = 2,
+    Rr = 3,
+    Sla = 4,
+    Sra = 5,
+    Swap = 6,
+    Srl = 7
+}
+
 #[derive(Clone, Copy)]
 pub enum OpMemAddress16 {
     Register(RegisterPair),
@@ -40,6 +66,8 @@ pub enum OpMemAddress8 {
 #[derive(Clone, Copy)]
 pub enum Opcode {
     Unknown,
+
+    // 8 bits load
     LdRR(Register, Register),
     LdRImm(Register),
     LdRMem(Register, OpMemAddress16),
@@ -47,11 +75,31 @@ pub enum Opcode {
     LdMemImm(RegisterPair),
     LdhRead(Register, OpMemAddress8),
     LdhWrite(OpMemAddress8, Register),
+
+    // 16 bits load
     Ld16RImm(RegisterPair),
     Ld16MemSp,
     Ld16SpHL,
     Push(RegisterPair),
     Pop(RegisterPair),
+
+    // 8 bits ALU
+    AluR(Alu, Register),
+    AluImm(Alu),
+    AluMem(Alu),
+    IncR(Register),
+    IncMem,
+    DecR(Register),
+    DecMem,
+    Daa,
+    Cpl,
+
+    // 16 bits ALU
+    Add16HL(RegisterPair),
+    Add16SPSigned,
+    Inc16R(RegisterPair),
+    Dec16R(RegisterPair),
+    Ld16HLSPSigned
 }
 
 impl From<u8> for Opcode {
@@ -160,6 +208,73 @@ impl From<u8> for Opcode {
                 let target = RegisterPair::try_from((op & 0b00110000) >> 4).expect("POP rr: Unexpected target register");
                 Self::Pop(if let RegisterPair::SP = target { RegisterPair::HL } else { target })
             },
+            0x80..=0x85 | 0x87..=0x8D | 0x8F..=0x95 |
+            0x97..=0x9D | 0x9F..=0xA5 | 0xA7..=0xAD |
+            0xAF..=0xB5 | 0xB7..=0xBD | 0xBF => {
+                // Encoding: 10,yyy,zzz y: alu op z: source reg8
+                let alu_op = Alu::try_from((op & 0o070) >> 3).expect("Alu r: Unexpected alu operation");
+                let source = Register::try_from(op & 0o007).expect("Alu r: Unexpected source register");
+                Self::AluR(alu_op, source)
+            },
+            0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => {
+                // Encoding: 11,yyy,110 y: alu op
+                let alu_op = Alu::try_from((op & 0o070) >> 3).expect("Alu n: Unexpected alu operation");
+                Self::AluImm(alu_op)
+            },
+            0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => {
+                // Encoding: 10,yyy,110 y: alu op
+                let alu_op = Alu::try_from((op & 0o070) >> 3).expect("Alu (HL): Unexpected alu operation");
+                Self::AluMem(alu_op)
+            },
+            0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x3C => {
+                // Encoding: 00,yyy,100 y: source reg8
+                let source = Register::try_from((op & 0o070) >> 3).expect("INC r: Unexpected source register");
+                Self::IncR(source)
+            },
+            0x34 => {
+                // Encoding: 00,110,100
+                Self::IncMem
+            },
+            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x3D => {
+                // Encoding: 00,yyy,101 y: source reg8
+                let source = Register::try_from((op & 0o070) >> 3).expect("DEC r: Unexpected source register");
+                Self::DecR(source)
+            },
+            0x35 => {
+                // Encoding: 00,110,101
+                Self::DecMem
+            },
+            0x27 => {
+                // Encoding: 00,100,111
+                Self::Daa
+            },
+            0x2F => {
+                // Encoding: 00,101,111
+                Self::Cpl
+            },
+            0x09 | 0x19 | 0x29 | 0x39 => {
+                // Encoding: 00,pp1,001 p: source reg16
+                let source = RegisterPair::try_from((op & 0b00110000) >> 4).expect("ADD HL,rr: Unexpected source register");
+                Self::Add16HL(source)
+            },
+            0xE8 => {
+                // Encoding: 11,101,000
+                Self::Add16SPSigned
+            },
+            0x03 | 0x13 | 0x23 | 0x33 => {
+                // Encoding: 00,pp0,011 p: source reg16
+                let source = RegisterPair::try_from((op & 0b00110000) >> 4).expect("INC rr: Unexpected source register");
+                Self::Inc16R(source)
+            },
+            0x0B | 0x1B | 0x2B | 0x3B => {
+                // Encoding: 00,pp1,011 p: source reg16
+                let source = RegisterPair::try_from((op & 0b00110000) >> 4).expect("DEC rr: Unexpected source register");
+                Self::Dec16R(source)
+            },
+            0xF8 => {
+                // Encoding: 11,111,000
+                Self::Ld16HLSPSigned
+            }
             _ => Self::Unknown
         }
     }
@@ -201,6 +316,37 @@ impl Opcode {
             Self::Ld16SpHL => 2,
             Self::Push(_) => 4,
             Self::Pop(_) => 3,
+            Self::AluR(_, _) => 1,
+            Self::AluImm(_) => 2,
+            Self::AluMem(_) => 2,
+            Self::IncR(_) => 1,
+            Self::IncMem => 3,
+            Self::DecR(_) => 1,
+            Self::DecMem => 3,
+            Self::Daa => 1,
+            Self::Cpl => 1,
+            Self::Add16HL(_) => 2,
+            Self::Add16SPSigned => 4,
+            Self::Inc16R(_) => 2,
+            Self::Dec16R(_) => 2,
+            Self::Ld16HLSPSigned => 4,
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+#[ignore]
+fn test_all_instructions_implemented() {
+    for i in 0u8..=255u8 {
+        let opcode = Opcode::from(i);
+        match i {
+            0xD3 | 0xDB | 0xDD | 0xE3 | 0xE4 | 0xEB | 0xEC | 0xED | 0xF4 | 0xFC | 0xFD => {
+                assert!(matches!(opcode, Opcode::Unknown), "{:#04X} should be unknown", i);
+            }
+            _ => {
+                assert!(!matches!(opcode, Opcode::Unknown), "{:#04X} shouldn't be unknown", i);
+            }
         }
     }
 }
