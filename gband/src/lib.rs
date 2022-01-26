@@ -20,7 +20,7 @@ pub use ppu::{Frame, Ppu, FRAME_HEIGHT, FRAME_WIDTH};
 // TODO: Revert pub added for criterion
 pub use cartridge::Cartridge;
 
-const WRAM_BANK_SIZE: u16 = 0x400;
+const WRAM_BANK_SIZE: u16 = 0x1000; // 4KiB
 
 pub struct Emulator {
     // == Cartridge Related Hardware== //
@@ -28,7 +28,7 @@ pub struct Emulator {
 
     // == CPU Related Hardware == //
     cpu: Cpu,
-    wram: [u8; WRAM_BANK_SIZE as usize * 4],
+    wram: [u8; WRAM_BANK_SIZE as usize * 8],
 
     // == PPU Related Hardware == //
     ppu: Ppu,
@@ -50,7 +50,7 @@ impl Emulator {
         let emulator = Self {
             cartridge,
             cpu: Default::default(),
-            wram: [0u8; WRAM_BANK_SIZE as usize * 4],
+            wram: [0u8; WRAM_BANK_SIZE as usize * 8],
 
             ppu: Default::default(),
 

@@ -3,7 +3,7 @@ mod decoder;
 use bitflags::bitflags;
 
 use crate::bus::CpuBus;
-use decoder::{Alu, Opcode, OpMemAddress8, OpMemAddress16, Register, RegisterPair};
+use decoder::{Alu, Condition, Opcode, OpMemAddress8, OpMemAddress16, Register, RegisterPair};
 
 bitflags! {
     pub struct FlagRegister: u8 {
@@ -78,8 +78,11 @@ impl Cpu {
     pub fn execute(&mut self, bus: &mut CpuBus) {
         // In Z80 / GB, unknown instructions are just noop
         match self.opcode_latch {
-            Opcode::Unknown => {
+            Opcode::Unknown | Opcode::Nop => {
                 // noop
+            }
+            Opcode::CBPrefix => {
+                todo!("Fetch and decode the CB opcode, and execute")
             }
             Opcode::LdRR(target, source) => {
                 self.set_register(target, self.get_register(source));
@@ -91,22 +94,21 @@ impl Cpu {
             Opcode::LdRMem(target, source) => {
                 let val = match source {
                     OpMemAddress16::Register(source) => {
-                        bus.read_ram(self.get_register_pair(source))
+                        bus.read(self.get_register_pair(source))
                     }
                     OpMemAddress16::RegisterIncrease(source) => {
                         let reg = self.get_register_pair(source);
                         self.set_register_pair(source, reg.wrapping_add(1));
-                        bus.read_ram(reg)
+                        bus.read(reg)
                     }
                     OpMemAddress16::RegisterDecrease(source) => {
                         let reg = self.get_register_pair(source);
                         self.set_register_pair(source, reg.wrapping_sub(1));
-                        bus.read_ram(reg)
+                        bus.read(reg)
                     }
                     OpMemAddress16::Immediate => {
-                        let lsb = self.read_immediate(bus) as u16;
-                        let msb = self.read_immediate(bus) as u16;
-                        bus.read_ram((msb << 8) | lsb)
+                        let addr = self.read_immediate16(bus);
+                        bus.read(addr)
                     }
                 };
 
@@ -128,17 +130,15 @@ impl Cpu {
                         reg
                     }
                     OpMemAddress16::Immediate => {
-                        let lsb = self.read_immediate(bus) as u16;
-                        let msb = self.read_immediate(bus) as u16;
-                        (msb << 8) | lsb
+                        self.read_immediate16(bus)
                     }
                 };
 
-                bus.write_ram(addr, self.get_register(source));
+                bus.write(addr, self.get_register(source));
             }
             Opcode::LdMemImm(target) => {
                 let immediate = self.read_immediate(bus);
-                bus.write_ram(self.get_register_pair(target), immediate);
+                bus.write(self.get_register_pair(target), immediate);
             }
             Opcode::LdhRead(target, source) => {
                 let addr = 0xFF00 | match source {
@@ -146,7 +146,7 @@ impl Cpu {
                     OpMemAddress8::Immediate => self.read_immediate(bus),
                 } as u16;
 
-                self.set_register(target, bus.read_ram(addr));
+                self.set_register(target, bus.read(addr));
             }
             Opcode::LdhWrite(target, source) => {
                 let addr = 0xFF00 | match target {
@@ -154,21 +154,16 @@ impl Cpu {
                     OpMemAddress8::Immediate => self.read_immediate(bus),
                 } as u16;
 
-                bus.write_ram(addr, self.get_register(source));
+                bus.write(addr, self.get_register(source));
             }
             Opcode::Ld16RImm(target) => {
-                let lsb = self.read_immediate(bus) as u16;
-                let msb = self.read_immediate(bus) as u16;
-
-                // TODO: This affects SP, not AF. Should add SP to enum and add custom try_from
-                self.set_register_pair(target, (msb << 8) | lsb);
+                let addr = self.read_immediate16(bus);
+                self.set_register_pair(target, addr);
             }
             Opcode::Ld16MemSp => {
-                let lsb = self.read_immediate(bus) as u16;
-                let msb = self.read_immediate(bus) as u16;
-                let addr = (msb << 8) | lsb;
-                bus.write_ram(addr, (self.sp & 0x00FF) as u8);
-                bus.write_ram(addr + 1, ((self.sp & 0xFF00) >> 8) as u8);
+                let addr = self.read_immediate16(bus);
+                bus.write(addr, (self.sp & 0x00FF) as u8);
+                bus.write(addr + 1, ((self.sp & 0xFF00) >> 8) as u8);
 
             }
             Opcode::Ld16SpHL => {
@@ -176,17 +171,11 @@ impl Cpu {
             }
             Opcode::Push(source) => {
                 let source = self.get_register_pair(source);
-                self.sp = self.sp.wrapping_sub(1);
-                bus.write_ram(self.sp, ((source & 0xFF00) >> 8) as u8);
-                self.sp = self.sp.wrapping_sub(1);
-                bus.write_ram(self.sp, (source & 0x00FF) as u8);
+                self.write_stack(bus, source);
             }
             Opcode::Pop(target) => {
-                let lsb = bus.read_ram(self.sp) as u16;
-                self.sp = self.sp.wrapping_add(1);
-                let msb = bus.read_ram(self.sp) as u16;
-                self.sp = self.sp.wrapping_add(1);
-                self.set_register_pair(target, (msb << 8) | lsb);
+                let val = self.read_stack(bus);
+                self.set_register_pair(target, val);
             }
             Opcode::AluR(alu_op, source) => {
                 let val = self.get_register(source);
@@ -197,7 +186,7 @@ impl Cpu {
                 self.run_alu(alu_op, val);
             }
             Opcode::AluMem(alu_op) => {
-                let val = bus.read_ram(self.get_register_pair(RegisterPair::HL));
+                let val = bus.read(self.get_register_pair(RegisterPair::HL));
                 self.run_alu(alu_op, val);
             }
             Opcode::IncR(source) => {
@@ -211,13 +200,13 @@ impl Cpu {
             }
             Opcode::IncMem => {
                 let addr = self.get_register_pair(RegisterPair::HL);
-                let val = bus.read_ram(addr);
+                let val = bus.read(addr);
                 let result = val.wrapping_add(1);
 
                 self.f.set(FlagRegister::H, (val & 0x0F) + 1 > 0x0F);
                 self.f.set(FlagRegister::N, false);
                 self.f.set(FlagRegister::Z, result == 0);
-                bus.write_ram(addr, result);
+                bus.write(addr, result);
             }
             Opcode::DecR(source) => {
                 let val = self.get_register(source);
@@ -230,13 +219,13 @@ impl Cpu {
             }
             Opcode::DecMem => {
                 let addr = self.get_register_pair(RegisterPair::HL);
-                let val = bus.read_ram(addr);
+                let val = bus.read(addr);
                 let result = val.wrapping_sub(1);
 
                 self.f.set(FlagRegister::H, (val & 0x0F) == 0);
                 self.f.set(FlagRegister::N, true);
                 self.f.set(FlagRegister::Z, result == 0);
-                bus.write_ram(addr, result);
+                bus.write(addr, result);
             }
             Opcode::Daa => {
                 let mut adjustment = if self.f.contains(FlagRegister::C)
@@ -304,13 +293,119 @@ impl Cpu {
                 self.f.set(FlagRegister::N, false);
                 self.f.set(FlagRegister::Z, false);
             }
+            Opcode::RlcA => {}
+            Opcode::RlA => {}
+            Opcode::RrcA => {}
+            Opcode::RrA => {}
+            Opcode::JpImm => {
+                let addr = self.read_immediate16(bus);
+                self.pc = addr;
+            }
+            Opcode::JpHL => {
+               self.pc = self.get_register_pair(RegisterPair::HL);
+            }
+            Opcode::JpCond(condition) => {
+                let addr = self.read_immediate16(bus);
+                if self.check_conditional(condition) {
+                    self.cycles += 1;
+                    self.pc = addr
+                }
+            }
+            Opcode::JpRel => {
+                let offset = self.read_immediate(bus) as i8;
+                self.pc = self.pc.wrapping_add(offset as u16)
+            }
+            Opcode::JpRelCond(condition) => {
+                let offset = self.read_immediate(bus) as i8;
+                if self.check_conditional(condition) {
+                    self.cycles += 1;
+                    self.pc = self.pc.wrapping_add(offset as u16)
+                }
+            }
+            Opcode::Call => {
+                let addr = self.read_immediate16(bus);
+                self.write_stack(bus, self.pc);
+                self.pc = addr;
+            }
+            Opcode::CallCond(condition) => {
+                let addr = self.read_immediate16(bus);
+                if self.check_conditional(condition) {
+                    self.cycles += 3;
+                    self.write_stack(bus, self.pc);
+                    self.pc = addr;
+                }
+            }
+            Opcode::Ret => {
+                let addr = self.read_stack(bus);
+                self.pc = addr;
+            }
+            Opcode::RetCond(condition) => {
+                if self.check_conditional(condition) {
+                    self.cycles += 3;
+                    let addr = self.read_stack(bus);
+                    self.pc = addr;
+                }
+            }
+            Opcode::Reti => {
+                let addr = self.read_stack(bus);
+                self.pc = addr;
+                // TODO: Add interrupt enable IME=1
+            }
+            Opcode::Rst(addr) => {
+                self.write_stack(bus, self.pc);
+                self.pc = addr as u16;
+            }
+            Opcode::Ccf => {
+                self.f.set(FlagRegister::C, !self.f.contains(FlagRegister::C));
+                self.f.remove(FlagRegister::N);
+                self.f.remove(FlagRegister::H);
+            }
+            Opcode::Scf => {
+                self.f.insert(FlagRegister::C);
+                self.f.remove(FlagRegister::N);
+                self.f.remove(FlagRegister::H);
+            }
+            Opcode::Halt => {
+                todo!("Implement halt")
+            }
+            Opcode::Stop => {
+                todo!("Implement stop")
+            }
+            Opcode::Di => {
+                todo!("Implement interruptions")
+            }
+            Opcode::Ei => {
+                todo!("Implement interruptions")
+            }
         }
     }
 
     fn read_immediate(&mut self, bus: &mut CpuBus) -> u8 {
-        let immediate = bus.read_ram(self.pc);
+        let immediate = bus.read(self.pc);
         self.pc = self.pc.wrapping_add(1);
         immediate
+    }
+
+    fn read_immediate16(&mut self, bus: &mut CpuBus) -> u16 {
+        let lsb = self.read_immediate(bus) as u16;
+        let msb = self.read_immediate(bus) as u16;
+        (msb << 8) | lsb
+    }
+
+    fn read_stack(&mut self, bus: &mut CpuBus) -> u16 {
+        let lsb = bus.read(self.sp) as u16;
+        self.sp = self.sp.wrapping_add(1);
+        let msb = bus.read(self.sp) as u16;
+        self.sp = self.sp.wrapping_add(1);
+
+        (msb << 8) | lsb
+    }
+
+    fn write_stack(&mut self, bus: &mut CpuBus, val: u16) {
+        self.sp = self.sp.wrapping_sub(1);
+        bus.write(self.sp, ((val & 0xFF00) >> 8) as u8);
+        self.sp = self.sp.wrapping_sub(1);
+        bus.write(self.sp, (val & 0x00FF) as u8);
     }
 
     fn run_alu(&mut self, alu_op: Alu, val: u8) {
@@ -398,6 +493,15 @@ impl Cpu {
         }
     }
 
+    fn check_conditional(&mut self, condition: Condition) -> bool {
+        match condition {
+            Condition::NonZero => !self.f.contains(FlagRegister::Z),
+            Condition::Zero => self.f.contains(FlagRegister::Z),
+            Condition::NoCarry => !self.f.contains(FlagRegister::C),
+            Condition::Carry => self.f.contains(FlagRegister::C),
+        }
+    }
+
     fn get_register(&self, reg: Register) -> u8 {
         match reg {
             Register::B => self.b,
@@ -457,6 +561,37 @@ impl Cpu {
     }
 }
 
+impl CpuBus<'_> {
+    fn write(&mut self, addr: u16, data: u8) {
+        match addr {
+            0x0000..=0x7FFF => self.write_cartridge(addr, data),
+            0x8000..=0x9FFF => {}, // VRAM
+            0xA000..=0xBFFF => self.write_cartridge(addr, data),
+            0xC000..=0xDFFF | 0xE000..=0xFDFF => self.write_ram(addr, data),
+            0xFE00..=0xFE9F => {}, // OAM
+            0xFEA0..=0xFEFF => {}, // FORBIDDEN
+            0xFF00..=0xFF7F => {}, // IO REGISTERS
+            0xFF80..=0xFFFE => {}, // HRAM
+            0xFFFF => {}, // INTERRUPT ENABLE
+        }
+    }
+
+    #[track_caller]
+    fn read(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x0000..=0x7FFF => self.read_cartridge(addr),
+            0x8000..=0x9FFF => 0, // VRAM
+            0xA000..=0xBFFF => self.read_cartridge(addr),
+            0xC000..=0xDFFF | 0xE000..=0xFDFF => self.read_ram(addr),
+            0xFE00..=0xFE9F => 0, // OAM
+            0xFEA0..=0xFEFF => 0, // FORBIDDEN
+            0xFF00..=0xFF7F => 0, // IO REGISTERS
+            0xFF80..=0xFFFE => 0, // HRAM
+            0xFFFF => 0, // INTERRUPT ENABLE
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,7 +604,7 @@ mod tests {
     struct MockEmulator {
         pub cartridge: Cartridge,
         pub cpu: Cpu,
-        pub wram: [u8; WRAM_BANK_SIZE as usize * 4],
+        pub wram: [u8; WRAM_BANK_SIZE as usize * 8],
         pub ppu: Ppu,
     }
 
@@ -482,7 +617,7 @@ mod tests {
             let emulator = Self {
                 cartridge,
                 cpu: Default::default(),
-                wram: [0u8; WRAM_BANK_SIZE as usize * 4],
+                wram: [0u8; WRAM_BANK_SIZE as usize * 8],
                 ppu: Default::default(),
             };
 
@@ -511,7 +646,8 @@ mod tests {
     fn test_ld_rr() {
         let mut emu = MockEmulator::new().unwrap();
 
-        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        // This could be in rom, but we'd set the pc to 0x150 to skip the header entry point anyway
+        emu.cpu.pc = 0xC000;
         emu.wram[0] = 0x40; // B,B
         emu.wram[1] = 0x41; // B,C
         emu.wram[2] = 0x42; // B,D
@@ -568,7 +704,7 @@ mod tests {
     fn test_ld_r_imm() {
         let mut emu = MockEmulator::new().unwrap();
 
-        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.cpu.pc = 0xC000;
         emu.wram[0] = 0x06; // B,n
         emu.wram[1] = 1;
         emu.wram[2] = 0x3E; // A,n
@@ -583,7 +719,7 @@ mod tests {
     fn test_ld16_r_imm() {
         let mut emu = MockEmulator::new().unwrap();
 
-        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.cpu.pc = 0xC000;
         emu.wram[0] = 0x01; // BC,nn
         emu.wram[1] = 0x10; // lsb
         emu.wram[2] = 0x20; // msb
@@ -611,14 +747,14 @@ mod tests {
     fn test_push() {
         let mut emu = MockEmulator::new().unwrap();
 
-        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.cpu.pc = 0xC000;
         emu.wram[0] = 0xC5; // BC
 
-        emu.cpu.sp = 0x500;
+        emu.cpu.sp = 0xC500;
         emu.cpu.b = 0x10;
         emu.cpu.c = 0x20;
         execute_n(&mut emu, 1);
-        assert_eq!(emu.cpu.sp, 0x4FE);
+        assert_eq!(emu.cpu.sp, 0xC4FE);
         assert_eq!(emu.wram[0x4FF], 0x10);
         assert_eq!(emu.wram[0x4FE], 0x20);
     }
@@ -627,15 +763,51 @@ mod tests {
     fn test_pop() {
         let mut emu = MockEmulator::new().unwrap();
 
-        // TODO: Convert this to rom when the bus actually use the cartridge and not wram
+        emu.cpu.pc = 0xC000;
         emu.wram[0] = 0xC1; // BC
         emu.wram[0x4FE] = 0x20;
         emu.wram[0x4FF] = 0x10;
 
-        emu.cpu.sp = 0x4FE;
+        emu.cpu.sp = 0xC4FE;
         execute_n(&mut emu, 1);
-        assert_eq!(emu.cpu.sp, 0x500);
+        assert_eq!(emu.cpu.sp, 0xC500);
         assert_eq!(emu.cpu.b, 0x10);
         assert_eq!(emu.cpu.c, 0x20);
+    }
+
+    #[test]
+    fn test_jump() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        emu.cpu.f.bits = 0;
+        emu.cpu.pc = 0xC000;
+        emu.wram[0] = 0xC3; // jp immediate
+        emu.wram[1] = 0x00;
+        emu.wram[2] = 0xD0;
+        emu.wram[0x1000] = 0xCA; // jp zero (fail)
+        emu.wram[0x1001] = 0x50;
+        emu.wram[0x1002] = 0xD0;
+        emu.wram[0x1003] = 0xC2; // jp non-zero
+        emu.wram[0x1004] = 0x50;
+        emu.wram[0x1005] = 0xD0;
+        emu.wram[0x1050] = 0x18; // jp relative
+        emu.wram[0x1051] = 0xEE; // -0x12 when signed, pc will be 0x1052 after this
+        emu.wram[0x1040] = 0x20; // jp relative non-zero
+        emu.wram[0x1041] = 0x1E;
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.pc, 0xD000 + 1); // +1 because of fetch-execute overlap occured
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.pc, 0xD003 + 1);
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.pc, 0xD050 + 1);
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.pc, 0xD040 + 1);
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.pc, 0xD060 + 1);
     }
 }

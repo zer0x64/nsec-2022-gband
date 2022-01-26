@@ -5,7 +5,7 @@ use gband::{borrow_cpu_bus, Cpu, Ppu, Cartridge, RomParserError};
 struct MockEmulator {
     pub cartridge: Cartridge,
     pub cpu: Cpu,
-    pub wram: [u8; 0x400 as usize * 4],
+    pub wram: [u8; 0x1000 as usize * 8],
     pub ppu: Ppu,
 }
 
@@ -18,7 +18,7 @@ impl MockEmulator {
         let emulator = Self {
             cartridge,
             cpu: Default::default(),
-            wram: [0u8; 0x400 as usize * 4],
+            wram: [0u8; 0x1000 as usize * 8],
             ppu: Default::default(),
         };
 

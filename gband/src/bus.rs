@@ -16,7 +16,7 @@ macro_rules! borrow_cpu_bus {
 }
 
 pub struct CpuBus<'a> {
-    wram: &'a mut [u8; WRAM_BANK_SIZE as usize * 4],
+    wram: &'a mut [u8; WRAM_BANK_SIZE as usize * 8],
     cartridge: &'a mut Cartridge,
     ppu: &'a mut Ppu,
     joypad_state: &'a JoypadState,
@@ -26,7 +26,7 @@ pub struct CpuBus<'a> {
 impl<'a> CpuBus<'a> {
     #[allow(clippy::too_many_arguments)] // it's fine, it's used by a macro
     pub fn borrow(
-        wram: &'a mut [u8; WRAM_BANK_SIZE as usize * 4],
+        wram: &'a mut [u8; WRAM_BANK_SIZE as usize * 8],
         cartridge: &'a mut Cartridge,
         ppu: &'a mut Ppu,
         joypad_state: &'a JoypadState,
@@ -94,12 +94,14 @@ impl CpuBus<'_> {
 
     pub fn write_ram(&mut self, addr: u16, data: u8) {
         // TODO: Bank switching
-        self.wram[(addr & (WRAM_BANK_SIZE * 4 - 1)) as usize] = data;
+        // For now, allow access to the first 2 banks, which are classic GB banks (not switchable)
+        self.wram[(addr & (WRAM_BANK_SIZE * 2 - 1)) as usize] = data;
     }
 
     pub fn read_ram(&self, addr: u16) -> u8 {
         // TODO: Bank switching
-        self.wram[(addr & ((WRAM_BANK_SIZE * 4) - 1)) as usize]
+        // For now, allow access to the first 2 banks, which are classic GB banks (not switchable)
+        self.wram[(addr & (WRAM_BANK_SIZE * 2 - 1)) as usize]
     }
 
     pub fn write_cartridge(&mut self, addr: u16, data: u8) {

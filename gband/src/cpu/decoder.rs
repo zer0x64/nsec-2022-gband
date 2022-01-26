@@ -38,6 +38,15 @@ pub enum Alu {
 
 #[derive(TryFromPrimitive, Clone, Copy)]
 #[repr(u8)]
+pub enum Condition {
+    NonZero = 0,
+    Zero = 1,
+    NoCarry = 2,
+    Carry = 3,
+}
+
+#[derive(TryFromPrimitive, Clone, Copy)]
+#[repr(u8)]
 enum Rot {
     Rlc = 0,
     Rrc = 1,
@@ -66,6 +75,7 @@ pub enum OpMemAddress8 {
 #[derive(Clone, Copy)]
 pub enum Opcode {
     Unknown,
+    CBPrefix,
 
     // 8 bits load
     LdRR(Register, Register),
@@ -99,7 +109,35 @@ pub enum Opcode {
     Add16SPSigned,
     Inc16R(RegisterPair),
     Dec16R(RegisterPair),
-    Ld16HLSPSigned
+    Ld16HLSPSigned,
+
+    // Rotate
+    RlcA,
+    RlA,
+    RrcA,
+    RrA,
+
+    // Jump
+    JpImm,
+    JpHL,
+    JpCond(Condition),
+    JpRel,
+    JpRelCond(Condition),
+    Call,
+    CallCond(Condition),
+    Ret,
+    RetCond(Condition),
+    Reti,
+    Rst(u8),
+
+    // Cpu control
+    Nop,
+    Ccf,
+    Scf,
+    Halt,
+    Stop,
+    Di,
+    Ei,
 }
 
 impl From<u8> for Opcode {
@@ -119,7 +157,7 @@ impl From<u8> for Opcode {
                 let target = Register::try_from((op & 0o070) >> 3).expect("LD r,n: Unexpected target register");
                 Self::LdRImm(target)
             },
-            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
+            0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x7E => {
                 // Encoding: 01,yyy,110 y: target reg8
                 let target = Register::try_from((op & 0o070) >> 3).expect("LD r,(HL): Unexpected target register");
                 Self::LdRMem(target, OpMemAddress16::Register(RegisterPair::HL))
@@ -141,7 +179,7 @@ impl From<u8> for Opcode {
                 // Encoding: 11,111,010
                 Self::LdRMem(Register::A, OpMemAddress16::Immediate)
             },
-            0x70..=0x77 => {
+            0x70..=0x75 | 0x77 => {
                 // Encoding: 01,110,zzz z: source reg8
                 let source = Register::try_from(op & 0o007).expect("LD (HL),r: Unexpected source register");
                 Self::LdMemR(OpMemAddress16::Register(RegisterPair::HL), source)
@@ -274,6 +312,103 @@ impl From<u8> for Opcode {
             0xF8 => {
                 // Encoding: 11,111,000
                 Self::Ld16HLSPSigned
+            },
+            0x07 => {
+                // Encoding: 00,000,111
+                Self::RlcA
+            },
+            0x17 => {
+                // Encoding: 00,010,111
+                Self::RlA
+            },
+            0x0F => {
+                // Encoding: 00,001,111
+                Self::RrcA
+            },
+            0x1F => {
+                // Encoding: 00,011,111
+                Self::RrA
+            },
+            0xC3 => {
+                // Encoding: 11,000,011
+                Self::JpImm
+            },
+            0xE9 => {
+                // Encoding: 11,101,001
+                Self::JpHL
+            },
+            0xC2 | 0xCA | 0xD2 | 0xDA => {
+                // Encoding: 11,0yy,010 y: flag condition
+                let cond = Condition::try_from((op & 0b00011000) >> 3).expect("JP f,nn: Unexpected condition");
+                Self::JpCond(cond)
+            },
+            0x18 => {
+                // Encoding: 00,011,000
+                Self::JpRel
+            },
+            0x20 | 0x28 | 0x30 | 0x38 => {
+                // Encoding: 00,yyy,000 y: flag condition (must substract 4)
+                let cond = Condition::try_from(((op & 0o070) >> 3) - 4).expect("JR f,dd: Unexpected condition");
+                Self::JpRelCond(cond)
+            },
+            0xCD => {
+                // Encoding: 11,001,101
+                Self::Call
+            },
+            0xC4 | 0xCC | 0xD4 | 0xDC => {
+                // Encoding: 11,0yy,100 y: flag condition
+                let cond = Condition::try_from((op & 0b00011000) >> 3).expect("CALL f,nn: Unexpected condition");
+                Self::CallCond(cond)
+            },
+            0xC9 => {
+                // Encoding: 11,001,001
+                Self::Ret
+            },
+            0xC0 | 0xC8 | 0xD0 | 0xD8 => {
+                // Encoding: 11,0yy,000 y: flag condition
+                let cond = Condition::try_from((op & 0b00011000) >> 3).expect("RET f: Unexpected condition");
+                Self::RetCond(cond)
+            },
+            0xD9 => {
+                // Encoding: 11,011,001
+                Self::Reti
+            },
+            0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
+                // Encoding: 11,yyy,111 y: call address (then *8)
+                let addr = ((op & 0o070) >> 3) * 8;
+                Self::Rst(addr)
+            },
+            0x00 => {
+                // Encoding: 00,000,000
+                Self::Nop
+            },
+            0x3F => {
+                // Encoding: 00,111,111
+                Self::Ccf
+            },
+            0x37 => {
+                // Encoding: 00,110,111
+                Self::Scf
+            },
+            0x76 => {
+                // Encoding: 01,110,110
+                Self::Halt
+            },
+            0x10 => {
+                // Encoding: 00,010,000
+                Self::Stop
+            },
+            0xF3 => {
+                // Encoding: 11,110,011
+                Self::Di
+            },
+            0xFB => {
+                // Encoding: 11,111,011
+                Self::Ei
+            },
+            0xCB => {
+                // Encoding: 11,001,011
+                Self::CBPrefix
             }
             _ => Self::Unknown
         }
@@ -284,6 +419,7 @@ impl Opcode {
     pub fn cycles(&self) -> u8 {
         match self {
             Self::Unknown => 1,
+            Self::CBPrefix => 1,
             Self::LdRR(_, _) => 1,
             Self::LdRImm(_) => 2,
             Self::LdRMem(_, mem) => {
@@ -330,13 +466,34 @@ impl Opcode {
             Self::Inc16R(_) => 2,
             Self::Dec16R(_) => 2,
             Self::Ld16HLSPSigned => 4,
+            Self::RlcA => 1,
+            Self::RlA => 1,
+            Self::RrcA => 1,
+            Self::RrA => 1,
+            Self::JpImm => 4,
+            Self::JpHL => 1,
+            Self::JpCond(_) => 3, // +1 if condition true
+            Self::JpRel => 3,
+            Self::JpRelCond(_) => 2, // +1 if condition true
+            Self::Call => 6,
+            Self::CallCond(_) => 3, // +3 if condition true
+            Self::Ret => 4,
+            Self::RetCond(_) => 2, // +3 if condition true
+            Self::Reti => 4,
+            Self::Rst(_) => 4,
+            Self::Nop => 1,
+            Self::Ccf => 1,
+            Self::Scf => 1,
+            Self::Halt => 1, // Actually... unknown
+            Self::Stop => 1, // Actually... unknown
+            Self::Di => 1,
+            Self::Ei => 1,
         }
     }
 }
 
 #[cfg(test)]
 #[test]
-#[ignore]
 fn test_all_instructions_implemented() {
     for i in 0u8..=255u8 {
         let opcode = Opcode::from(i);
