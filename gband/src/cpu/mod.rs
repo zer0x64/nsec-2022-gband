@@ -561,41 +561,11 @@ impl Cpu {
     }
 }
 
-impl CpuBus<'_> {
-    fn write(&mut self, addr: u16, data: u8) {
-        match addr {
-            0x0000..=0x7FFF => self.write_cartridge(addr, data),
-            0x8000..=0x9FFF => {}, // VRAM
-            0xA000..=0xBFFF => self.write_cartridge(addr, data),
-            0xC000..=0xDFFF | 0xE000..=0xFDFF => self.write_ram(addr, data),
-            0xFE00..=0xFE9F => {}, // OAM
-            0xFEA0..=0xFEFF => {}, // FORBIDDEN
-            0xFF00..=0xFF7F => {}, // IO REGISTERS
-            0xFF80..=0xFFFE => {}, // HRAM
-            0xFFFF => {}, // INTERRUPT ENABLE
-        }
-    }
-
-    #[track_caller]
-    fn read(&mut self, addr: u16) -> u8 {
-        match addr {
-            0x0000..=0x7FFF => self.read_cartridge(addr),
-            0x8000..=0x9FFF => 0, // VRAM
-            0xA000..=0xBFFF => self.read_cartridge(addr),
-            0xC000..=0xDFFF | 0xE000..=0xFDFF => self.read_ram(addr),
-            0xFE00..=0xFE9F => 0, // OAM
-            0xFEA0..=0xFEFF => 0, // FORBIDDEN
-            0xFF00..=0xFF7F => 0, // IO REGISTERS
-            0xFF80..=0xFFFE => 0, // HRAM
-            0xFFFF => 0, // INTERRUPT ENABLE
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Cartridge;
+    use crate::JoypadState;
     use crate::Ppu;
     use crate::RomParserError;
     use crate::WRAM_BANK_SIZE;
@@ -605,6 +575,8 @@ mod tests {
         pub cartridge: Cartridge,
         pub cpu: Cpu,
         pub wram: [u8; WRAM_BANK_SIZE as usize * 8],
+        pub joypad_state: JoypadState,
+        pub joypad_register: u8,
         pub ppu: Ppu,
     }
 
@@ -618,6 +590,8 @@ mod tests {
                 cartridge,
                 cpu: Default::default(),
                 wram: [0u8; WRAM_BANK_SIZE as usize * 8],
+                joypad_state: Default::default(),
+                joypad_register: 0,
                 ppu: Default::default(),
             };
 
