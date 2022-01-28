@@ -228,21 +228,30 @@ impl Cpu {
                 bus.write(addr, result);
             }
             Opcode::Daa => {
-                let mut adjustment = if self.f.contains(FlagRegister::C)
-                    || (!self.f.contains(FlagRegister::N) && self.a > 0x99)
-                {
+                let mut adjustment = if self.f.contains(FlagRegister::C) {
                     0x60
                 } else {
                     0
                 };
 
-                if self.f.contains(FlagRegister::H)
-                    || (!self.f.contains(FlagRegister::N) && (self.a & 0x0F) > 0x09)
-                {
+                if self.f.contains(FlagRegister::H) {
                     adjustment |= 0x06;
                 }
 
-                self.a = self.a.wrapping_sub(adjustment);
+                if !self.f.contains(FlagRegister::N) {
+                    if (self.a & 0x0F) > 0x09 {
+                        adjustment |= 0x06;
+                    }
+
+                    if self.a > 0x99 {
+                        adjustment |= 0x60;
+                    }
+
+                    self.a = self.a.wrapping_add(adjustment);
+                } else {
+                    self.a = self.a.wrapping_sub(adjustment)
+                }
+
                 self.f.set(FlagRegister::C, adjustment >= 0x60);
                 self.f.set(FlagRegister::H, false);
                 self.f.set(FlagRegister::Z, self.a == 0);
