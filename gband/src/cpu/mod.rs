@@ -3,7 +3,7 @@ mod decoder;
 use bitflags::bitflags;
 
 use crate::bus::CpuBus;
-use decoder::{Alu, Condition, Opcode, OpMemAddress8, OpMemAddress16, Register, RegisterPair};
+use decoder::{Alu, Condition, Opcode, OpMemAddress8, OpMemAddress16, Register, RegisterPair, Rot};
 
 bitflags! {
     pub struct FlagRegister: u8 {
@@ -302,10 +302,18 @@ impl Cpu {
                 self.f.set(FlagRegister::N, false);
                 self.f.set(FlagRegister::Z, false);
             }
-            Opcode::RlcA => {}
-            Opcode::RlA => {}
-            Opcode::RrcA => {}
-            Opcode::RrA => {}
+            Opcode::RlcA => {
+                self.run_rot(Rot::Rlc, Register::A, true);
+            }
+            Opcode::RlA => {
+                self.run_rot(Rot::Rl, Register::A, true);
+            }
+            Opcode::RrcA => {
+                self.run_rot(Rot::Rrc, Register::A, true);
+            }
+            Opcode::RrA => {
+                self.run_rot(Rot::Rr, Register::A, true);
+            }
             Opcode::JpImm => {
                 let addr = self.read_immediate16(bus);
                 self.pc = addr;
@@ -500,6 +508,58 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, result == 0);
             }
         }
+    }
+
+    fn run_rot(&mut self, rot_op: Rot, reg: Register, force_zero: bool) {
+        let val = self.get_register(reg);
+
+        let (result, carry) = match rot_op {
+            Rot::Rlc => {
+                let carry = val & 0x80 == 0x80;
+                (val.rotate_left(1), carry)
+            }
+            Rot::Rrc => {
+                let carry = val & 0x01 == 0x01;
+                (val.rotate_right(1), carry)
+            }
+            Rot::Rl => {
+                let carry = val & 0x80 == 0x80;
+                let result = (val << 1) | (if self.f.contains(FlagRegister::C) { 1 } else { 0 });
+                (result, carry)
+            }
+            Rot::Rr => {
+                let carry = val & 0x01 == 0x01;
+                let result = (val >> 1) | (if self.f.contains(FlagRegister::C) { 0x80 } else { 0 });
+                (result, carry)
+            }
+            Rot::Sla => {
+                // TODO: Implement Sla, is a CB instruction
+                (0, false)
+            }
+            Rot::Sra => {
+                // TODO: Implement Sra, is a CB instruction
+                (0, false)
+            }
+            Rot::Swap => {
+                // TODO: Implement Swap, is a CB instruction
+                (0, false)
+            }
+            Rot::Srl => {
+                // TODO: Implement Srl, is a CB instruction
+                (0, false)
+            }
+        };
+
+        self.f.set(FlagRegister::C, carry);
+        self.f.set(FlagRegister::H | FlagRegister::N, false);
+
+        if force_zero {
+            self.f.set(FlagRegister::Z, false);
+        } else {
+            self.f.set(FlagRegister::Z, result == 0);
+        }
+
+        self.set_register(reg, result);
     }
 
     fn check_conditional(&mut self, condition: Condition) -> bool {

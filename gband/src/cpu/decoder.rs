@@ -47,7 +47,7 @@ pub enum Condition {
 
 #[derive(TryFromPrimitive, Clone, Copy)]
 #[repr(u8)]
-enum Rot {
+pub enum Rot {
     Rlc = 0,
     Rrc = 1,
     Rl = 2,
