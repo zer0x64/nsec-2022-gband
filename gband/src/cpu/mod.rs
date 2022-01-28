@@ -43,7 +43,7 @@ impl Default for Cpu {
             a: 0,
             f: FlagRegister::empty(),
             sp: 0,
-            pc: 0,
+            pc: 0x100,
             cycles: 0,
 
             opcode_latch: Opcode::Unknown
@@ -82,7 +82,7 @@ impl Cpu {
                 // noop
             }
             Opcode::CBPrefix => {
-                todo!("Fetch and decode the CB opcode, and execute")
+                // TODO: Fetch and decode the CB opcode, and execute
             }
             Opcode::LdRR(target, source) => {
                 self.set_register(target, self.get_register(source));
@@ -163,7 +163,7 @@ impl Cpu {
             Opcode::Ld16MemSp => {
                 let addr = self.read_immediate16(bus);
                 bus.write(addr, (self.sp & 0x00FF) as u8);
-                bus.write(addr + 1, ((self.sp & 0xFF00) >> 8) as u8);
+                bus.write(addr + 1, (self.sp >> 8) as u8);
 
             }
             Opcode::Ld16SpHL => {
@@ -171,10 +171,10 @@ impl Cpu {
             }
             Opcode::Push(source) => {
                 let source = self.get_register_pair(source);
-                self.write_stack(bus, source);
+                self.push_stack(bus, source);
             }
             Opcode::Pop(target) => {
-                let val = self.read_stack(bus);
+                let val = self.pop_stack(bus);
                 self.set_register_pair(target, val);
             }
             Opcode::AluR(alu_op, source) => {
@@ -341,35 +341,35 @@ impl Cpu {
             }
             Opcode::Call => {
                 let addr = self.read_immediate16(bus);
-                self.write_stack(bus, self.pc);
+                self.push_stack(bus, self.pc);
                 self.pc = addr;
             }
             Opcode::CallCond(condition) => {
                 let addr = self.read_immediate16(bus);
                 if self.check_conditional(condition) {
                     self.cycles += 3;
-                    self.write_stack(bus, self.pc);
+                    self.push_stack(bus, self.pc);
                     self.pc = addr;
                 }
             }
             Opcode::Ret => {
-                let addr = self.read_stack(bus);
+                let addr = self.pop_stack(bus);
                 self.pc = addr;
             }
             Opcode::RetCond(condition) => {
                 if self.check_conditional(condition) {
                     self.cycles += 3;
-                    let addr = self.read_stack(bus);
+                    let addr = self.pop_stack(bus);
                     self.pc = addr;
                 }
             }
             Opcode::Reti => {
-                let addr = self.read_stack(bus);
+                let addr = self.pop_stack(bus);
                 self.pc = addr;
                 // TODO: Add interrupt enable IME=1
             }
             Opcode::Rst(addr) => {
-                self.write_stack(bus, self.pc);
+                self.push_stack(bus, self.pc);
                 self.pc = addr as u16;
             }
             Opcode::Ccf => {
@@ -383,16 +383,16 @@ impl Cpu {
                 self.f.remove(FlagRegister::H);
             }
             Opcode::Halt => {
-                todo!("Implement halt")
+                // TODO: Implement halt
             }
             Opcode::Stop => {
-                todo!("Implement stop")
+                // TODO: Implement stop
             }
             Opcode::Di => {
-                todo!("Implement interruptions")
+                // TODO: Implement interruptions
             }
             Opcode::Ei => {
-                todo!("Implement interruptions")
+                // TODO: Implement interruptions
             }
         }
     }
@@ -409,7 +409,7 @@ impl Cpu {
         (msb << 8) | lsb
     }
 
-    fn read_stack(&mut self, bus: &mut CpuBus) -> u16 {
+    fn pop_stack(&mut self, bus: &mut CpuBus) -> u16 {
         let lsb = bus.read(self.sp) as u16;
         self.sp = self.sp.wrapping_add(1);
         let msb = bus.read(self.sp) as u16;
@@ -418,9 +418,9 @@ impl Cpu {
         (msb << 8) | lsb
     }
 
-    fn write_stack(&mut self, bus: &mut CpuBus, val: u16) {
+    fn push_stack(&mut self, bus: &mut CpuBus, val: u16) {
         self.sp = self.sp.wrapping_sub(1);
-        bus.write(self.sp, ((val & 0xFF00) >> 8) as u8);
+        bus.write(self.sp, (val >> 8) as u8);
         self.sp = self.sp.wrapping_sub(1);
         bus.write(self.sp, (val & 0x00FF) as u8);
     }
@@ -608,22 +608,22 @@ impl Cpu {
     fn set_register_pair(&mut self, reg: RegisterPair, val: u16) {
         match reg {
             RegisterPair::BC => {
-                self.b = ((val & 0xFF00) >> 8) as u8;
+                self.b = (val >> 8) as u8;
                 self.c = (val & 0x00FF) as u8
             }
             RegisterPair::DE => {
-                self.d = ((val & 0xFF00) >> 8) as u8;
+                self.d = (val >> 8) as u8;
                 self.e = (val & 0x00FF) as u8
             }
             RegisterPair::HL => {
-                self.h = ((val & 0xFF00) >> 8) as u8;
+                self.h = (val >> 8) as u8;
                 self.l = (val & 0x00FF) as u8
             }
             RegisterPair::SP => {
                 self.sp = val;
             }
             RegisterPair::AF => {
-                self.a = ((val & 0xFF00) >> 8) as u8;
+                self.a = (val >> 8) as u8;
                 self.f.bits = (val & 0x00F0) as u8
             }
         }
