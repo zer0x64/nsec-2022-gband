@@ -238,13 +238,13 @@ impl From<u8> for Opcode {
                 // Encoding: 11,pp0,101 p: source reg16
                 // This uses AF for 3, not SP
                 let source = RegisterPair::try_from((op & 0b00110000) >> 4).expect("PUSH rr: Unexpected source register");
-                Self::Push(if let RegisterPair::SP = source { RegisterPair::HL } else { source })
+                Self::Push(if let RegisterPair::SP = source { RegisterPair::AF } else { source })
             },
             0xC1 | 0xD1 | 0xE1 | 0xF1 => {
                 // Encoding: 11,pp0,001 p: target reg16
                 // This uses AF for 3, not SP
                 let target = RegisterPair::try_from((op & 0b00110000) >> 4).expect("POP rr: Unexpected target register");
-                Self::Pop(if let RegisterPair::SP = target { RegisterPair::HL } else { target })
+                Self::Pop(if let RegisterPair::SP = target { RegisterPair::AF } else { target })
             },
             0x80..=0x85 | 0x87..=0x8D | 0x8F..=0x95 |
             0x97..=0x9D | 0x9F..=0xA5 | 0xA7..=0xAD |
@@ -375,7 +375,7 @@ impl From<u8> for Opcode {
             },
             0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
                 // Encoding: 11,yyy,111 y: call address (then *8)
-                let addr = ((op & 0o070) >> 3) * 8;
+                let addr = op & 0o070;
                 Self::Rst(addr)
             },
             0x00 => {
@@ -465,7 +465,7 @@ impl Opcode {
             Self::Add16SPSigned => 4,
             Self::Inc16R(_) => 2,
             Self::Dec16R(_) => 2,
-            Self::Ld16HLSPSigned => 4,
+            Self::Ld16HLSPSigned => 3,
             Self::RlcA => 1,
             Self::RlA => 1,
             Self::RrcA => 1,

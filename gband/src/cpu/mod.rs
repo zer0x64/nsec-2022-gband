@@ -40,7 +40,7 @@ impl Default for Cpu {
             e: 0,
             h: 0,
             l: 0,
-            a: 0,
+            a: 0x11,
             f: FlagRegister::empty(),
             sp: 0,
             pc: 0x100,
@@ -442,8 +442,8 @@ impl Cpu {
 
                 // Would use carrying_add if it was in stable
                 let (r1, c1) = self.a.overflowing_add(val);
-                let (r2, c2) = r1.overflowing_add(carry_flag);
-                let (result, carry) = (r2, c1 | c2);
+                let (result, c2) = r1.overflowing_add(carry_flag);
+                let carry = c1 | c2;
                 let half_carry = (self.a & 0x0F) + (val & 0x0F) + carry_flag > 0x0F;
 
                 self.f.set(FlagRegister::C, carry);
@@ -467,8 +467,8 @@ impl Cpu {
 
                 // Would use carrying_sub if it was in stable
                 let (r1, c1) = self.a.overflowing_sub(val);
-                let (r2, c2) = r1.overflowing_sub(carry_flag);
-                let (result, carry) = (r2, c1 | c2);
+                let (result, c2) = r1.overflowing_sub(carry_flag);
+                let carry = c1 | c2;
                 let half_carry = (self.a & 0x0F) < (val & 0x0F) + carry_flag;
 
                 self.f.set(FlagRegister::C, carry);
