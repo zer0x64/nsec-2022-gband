@@ -1,6 +1,6 @@
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use gband::{borrow_cpu_bus, Cartridge, Cpu, JoypadState, Ppu, RomParserError, InterruptState};
 use std::time::Duration;
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
-use gband::{borrow_cpu_bus, Cpu, Ppu, Cartridge, JoypadState, RomParserError, InterruptState};
 
 struct MockEmulator {
     pub cartridge: Cartridge,

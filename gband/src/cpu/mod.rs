@@ -106,9 +106,7 @@ impl Cpu {
             }
             Opcode::LdRMem(target, source) => {
                 let val = match source {
-                    OpMemAddress16::Register(source) => {
-                        bus.read(self.get_register_pair(source))
-                    }
+                    OpMemAddress16::Register(source) => bus.read(self.get_register_pair(source)),
                     OpMemAddress16::RegisterIncrease(source) => {
                         let reg = self.get_register_pair(source);
                         self.set_register_pair(source, reg.wrapping_add(1));
@@ -129,9 +127,7 @@ impl Cpu {
             }
             Opcode::LdMemR(target, source) => {
                 let addr = match target {
-                    OpMemAddress16::Register(target) => {
-                        self.get_register_pair(target)
-                    }
+                    OpMemAddress16::Register(target) => self.get_register_pair(target),
                     OpMemAddress16::RegisterIncrease(target) => {
                         let reg = self.get_register_pair(target);
                         self.set_register_pair(target, reg.wrapping_add(1));
@@ -142,9 +138,7 @@ impl Cpu {
                         self.set_register_pair(target, reg.wrapping_sub(1));
                         reg
                     }
-                    OpMemAddress16::Immediate => {
-                        self.read_immediate16(bus)
-                    }
+                    OpMemAddress16::Immediate => self.read_immediate16(bus),
                 };
 
                 bus.write(addr, self.get_register(source));
@@ -154,18 +148,20 @@ impl Cpu {
                 bus.write(self.get_register_pair(target), immediate);
             }
             Opcode::LdhRead(target, source) => {
-                let addr = 0xFF00 | match source {
-                    OpMemAddress8::Register(source) => self.get_register(source),
-                    OpMemAddress8::Immediate => self.read_immediate(bus),
-                } as u16;
+                let addr = 0xFF00
+                    | match source {
+                        OpMemAddress8::Register(source) => self.get_register(source),
+                        OpMemAddress8::Immediate => self.read_immediate(bus),
+                    } as u16;
 
                 self.set_register(target, bus.read(addr));
             }
             Opcode::LdhWrite(target, source) => {
-                let addr = 0xFF00 | match target {
-                    OpMemAddress8::Register(target) => self.get_register(target),
-                    OpMemAddress8::Immediate => self.read_immediate(bus),
-                } as u16;
+                let addr = 0xFF00
+                    | match target {
+                        OpMemAddress8::Register(target) => self.get_register(target),
+                        OpMemAddress8::Immediate => self.read_immediate(bus),
+                    } as u16;
 
                 bus.write(addr, self.get_register(source));
             }
@@ -177,7 +173,6 @@ impl Cpu {
                 let addr = self.read_immediate16(bus);
                 bus.write(addr, (self.sp & 0x00FF) as u8);
                 bus.write(addr + 1, (self.sp >> 8) as u8);
-
             }
             Opcode::Ld16SpHL => {
                 self.sp = self.get_register_pair(RegisterPair::HL);
@@ -309,7 +304,7 @@ impl Cpu {
                 let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
                 let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
 
-                self.set_register_pair(RegisterPair::HL,self.sp.wrapping_add(immediate));
+                self.set_register_pair(RegisterPair::HL, self.sp.wrapping_add(immediate));
                 self.f.set(FlagRegister::C, carry);
                 self.f.set(FlagRegister::H, half_carry);
                 self.f.set(FlagRegister::N, false);
@@ -394,7 +389,8 @@ impl Cpu {
                 self.pc = addr as u16;
             }
             Opcode::Ccf => {
-                self.f.set(FlagRegister::C, !self.f.contains(FlagRegister::C));
+                self.f
+                    .set(FlagRegister::C, !self.f.contains(FlagRegister::C));
                 self.f.remove(FlagRegister::N);
                 self.f.remove(FlagRegister::H);
             }
@@ -597,12 +593,22 @@ impl Cpu {
             }
             Rot::Rl => {
                 let carry = val & 0x80 == 0x80;
-                let result = (val << 1) | (if self.f.contains(FlagRegister::C) { 1 } else { 0 });
+                let result = (val << 1)
+                    | (if self.f.contains(FlagRegister::C) {
+                        1
+                    } else {
+                        0
+                    });
                 (result, carry)
             }
             Rot::Rr => {
                 let carry = val & 0x01 == 0x01;
-                let result = (val >> 1) | (if self.f.contains(FlagRegister::C) { 0x80 } else { 0 });
+                let result = (val >> 1)
+                    | (if self.f.contains(FlagRegister::C) {
+                        0x80
+                    } else {
+                        0
+                    });
                 (result, carry)
             }
             Rot::Sla => {

@@ -6,17 +6,17 @@ extern crate alloc;
 pub mod bus; // TODO: Revert pub added for criterion
 
 mod cartridge;
-mod joypad_state;
 mod cpu;
 mod interrupt;
+mod joypad_state;
 mod ppu;
 mod rgb_palette;
 pub mod utils;
 
 pub use cartridge::RomParserError;
-pub use joypad_state::JoypadState;
 pub use cpu::Cpu;
 pub use interrupt::{ InterruptState, InterruptReg };
+pub use joypad_state::JoypadState;
 pub use ppu::{Frame, Ppu, FRAME_HEIGHT, FRAME_WIDTH};
 
 // TODO: Revert pub added for criterion
@@ -61,7 +61,7 @@ impl Emulator {
             wram: [0u8; WRAM_BANK_SIZE as usize * 8],
             hram: [0u8; 0x7F],
 
-            ppu: Default::default(),
+            ppu: Ppu::new(),
 
             joypad_state: Default::default(),
             joypad_register: Default::default(),
@@ -76,13 +76,13 @@ impl Emulator {
     pub fn clock(&mut self) -> Option<Frame> {
         self.clock_count += 1;
 
-        // clock_count is at ~4MHz
-        // PPU is clocked at ~4MHz
-        self.ppu.clock();
+        // Clock PPU every 2 cycles
+        if self.clock_count == 1 || self.clock_count == 3 {
+            self.ppu.clock();
+        };
 
-        // We clock CPU on M-cycles, at ~1MHz on regular mode and ~2MHz on CGB double speed mode
-        // This means we clock it every 2 or 4 cycles
-        if self.clock_count == 4 {
+        // Clock CPU every 4 cycles
+        if self.clock_count == 2 || self.clock_count == 4 {
             let mut cpu_bus = borrow_cpu_bus!(self);
             self.cpu.clock(&mut cpu_bus);
 
