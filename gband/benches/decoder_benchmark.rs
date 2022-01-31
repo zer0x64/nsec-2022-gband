@@ -36,6 +36,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(100);
     group.measurement_time(Duration::from_millis(500));
 
+    // LdRMem, Add16HL, LdRImm, LdRR, LdRR, LdRR, LdRMem, LdRMem, LdRR, AluR, LdMemR
+    //     10,      57,     62,   64,   65,   80,     94,    102,  127,  128,    234
     for opcode in [0x0A, 0x39, 0x3E, 0x40, 0x41, 0x50, 0x5E, 0x66, 0x7F, 0x80, 0xEA] {
         group.bench_with_input(BenchmarkId::new("fetch", opcode), &opcode, |b, opcode| {
             let mut emulator = MockEmulator::new().unwrap();

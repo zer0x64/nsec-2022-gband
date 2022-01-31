@@ -61,6 +61,26 @@ impl CpuBus<'_> {
                 // Joypad
                 self.write_joypad_reg(data)
             },
+            0xFF01 => unsafe {
+                // Serial transfer data (SB)
+                static mut buffer: alloc::vec::Vec<u8> = alloc::vec![];
+
+                if data == 10u8 {
+                    if !buffer.is_empty() {
+                        log::info!("Serial port: {}", buffer
+                            .iter()
+                            .flat_map(|c| (*c as char).escape_default())
+                            .collect::<alloc::string::String>()
+                        );
+                        buffer.clear();
+                    }
+                } else {
+                    buffer.push(data);
+                }
+            },
+            0xFF02 => {
+                // Serial transfer control (SC)
+            }
             _ => {
                 // TODO: handle full memory map
             }

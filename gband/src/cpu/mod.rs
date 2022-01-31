@@ -3,7 +3,17 @@ mod decoder;
 use bitflags::bitflags;
 
 use crate::bus::CpuBus;
-use decoder::{Alu, Condition, Opcode, OpMemAddress8, OpMemAddress16, Register, RegisterPair, Rot};
+use decoder::{
+    Alu,
+    Condition,
+    Opcode,
+    OpcodeCB,
+    OpMemAddress8,
+    OpMemAddress16,
+    Register,
+    RegisterPair,
+    Rot
+};
 
 bitflags! {
     pub struct FlagRegister: u8 {
@@ -83,7 +93,7 @@ impl Cpu {
                 // noop
             }
             Opcode::CBPrefix => {
-                // TODO: Fetch and decode the CB opcode, and execute
+                self.run_cb(bus);
             }
             Opcode::LdRR(target, source) => {
                 self.set_register(target, self.get_register(source));
@@ -158,8 +168,8 @@ impl Cpu {
                 bus.write(addr, self.get_register(source));
             }
             Opcode::Ld16RImm(target) => {
-                let addr = self.read_immediate16(bus);
-                self.set_register_pair(target, addr);
+                let immediate = self.read_immediate16(bus);
+                self.set_register_pair(target, immediate);
             }
             Opcode::Ld16MemSp => {
                 let addr = self.read_immediate16(bus);
@@ -292,8 +302,8 @@ impl Cpu {
                 self.set_register_pair(source, self.get_register_pair(source).wrapping_sub(1));
             }
             Opcode::Ld16HLSPSigned => {
-                // Reinterpret the immediate as signed, then convert to unsigned u16 equivalent
-                let immediate = self.read_immediate(bus) as i8 as i16 as u16;
+                // Two's complement convertion
+                let immediate = self.read_immediate(bus) as i8 as u16;
                 let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
                 let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
 
@@ -304,23 +314,31 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, false);
             }
             Opcode::RlcA => {
-                self.run_rot(Rot::Rlc, Register::A, true);
+                let val = self.get_register(Register::A);
+                let result = self.run_rot(Rot::Rlc, val, true);
+                self.set_register(Register::A, result);
             }
             Opcode::RlA => {
-                self.run_rot(Rot::Rl, Register::A, true);
+                let val = self.get_register(Register::A);
+                let result = self.run_rot(Rot::Rl, val, true);
+                self.set_register(Register::A, result);
             }
             Opcode::RrcA => {
-                self.run_rot(Rot::Rrc, Register::A, true);
+                let val = self.get_register(Register::A);
+                let result = self.run_rot(Rot::Rrc, val, true);
+                self.set_register(Register::A, result);
             }
             Opcode::RrA => {
-                self.run_rot(Rot::Rr, Register::A, true);
+                let val = self.get_register(Register::A);
+                let result = self.run_rot(Rot::Rr, val, true);
+                self.set_register(Register::A, result);
             }
             Opcode::JpImm => {
                 let addr = self.read_immediate16(bus);
                 self.pc = addr;
             }
             Opcode::JpHL => {
-               self.pc = self.get_register_pair(RegisterPair::HL);
+                self.pc = self.get_register_pair(RegisterPair::HL);
             }
             Opcode::JpCond(condition) => {
                 let addr = self.read_immediate16(bus);
@@ -426,6 +444,60 @@ impl Cpu {
         bus.write(self.sp, (val & 0x00FF) as u8);
     }
 
+    fn run_cb(&mut self, bus: &mut CpuBus) {
+        let op = OpcodeCB::from(self.read_immediate(bus));
+        self.cycles += op.cycles();
+
+        match op {
+            OpcodeCB::RotateR(rot_op, source) => {
+                let val = self.get_register(source);
+                let result = self.run_rot(rot_op, val, false);
+                self.set_register(source, result);
+            }
+            OpcodeCB::RotateMem(rot_op) => {
+                let val = bus.read(self.get_register_pair(RegisterPair::HL));
+                let result = self.run_rot(rot_op, val, false);
+                bus.write(self.get_register_pair(RegisterPair::HL), result);
+            }
+            OpcodeCB::BitR(index, source) => {
+                let val = self.get_register(source);
+                let mask = 1u8 << index;
+
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::H, true);
+                self.f.set(FlagRegister::Z, (val & mask) == 0);
+            }
+            OpcodeCB::BitMem(index) => {
+                let val = bus.read(self.get_register_pair(RegisterPair::HL));
+                let mask = 1u8 << index;
+
+                self.f.set(FlagRegister::N, false);
+                self.f.set(FlagRegister::H, true);
+                self.f.set(FlagRegister::Z, (val & mask) == 0);
+            }
+            OpcodeCB::ResR(index, source) => {
+                let val = self.get_register(source);
+                let mask = !(1u8 << index);
+                self.set_register(source, val & mask);
+            }
+            OpcodeCB::ResMem(index) => {
+                let val = bus.read(self.get_register_pair(RegisterPair::HL));
+                let mask = !(1u8 << index);
+                bus.write(self.get_register_pair(RegisterPair::HL), val & mask);
+            }
+            OpcodeCB::SetR(index, source) => {
+                let val = self.get_register(source);
+                let mask = 1u8 << index;
+                self.set_register(source, val | mask);
+            }
+            OpcodeCB::SetMem(index) => {
+                let val = bus.read(self.get_register_pair(RegisterPair::HL));
+                let mask = 1u8 << index;
+                bus.write(self.get_register_pair(RegisterPair::HL), val | mask);
+            }
+        }
+    }
+
     fn run_alu(&mut self, alu_op: Alu, val: u8) {
         match alu_op {
             Alu::Add => {
@@ -511,9 +583,7 @@ impl Cpu {
         }
     }
 
-    fn run_rot(&mut self, rot_op: Rot, reg: Register, force_zero: bool) {
-        let val = self.get_register(reg);
-
+    fn run_rot(&mut self, rot_op: Rot, val: u8, force_zero: bool) -> u8 {
         let (result, carry) = match rot_op {
             Rot::Rlc => {
                 let carry = val & 0x80 == 0x80;
@@ -534,20 +604,23 @@ impl Cpu {
                 (result, carry)
             }
             Rot::Sla => {
-                // TODO: Implement Sla, is a CB instruction
-                (0, false)
+                let carry = val & 0x80 == 0x80;
+                let result = val << 1;
+                (result, carry)
             }
             Rot::Sra => {
-                // TODO: Implement Sra, is a CB instruction
-                (0, false)
+                // Rust >> is logical by default on u8, need to take msb manually
+                let carry = val & 0x01 == 0x01;
+                let result = (val >> 1) | (val & 0x80);
+                (result, carry)
             }
             Rot::Swap => {
-                // TODO: Implement Swap, is a CB instruction
-                (0, false)
+                (val.swap_bytes(), false)
             }
             Rot::Srl => {
-                // TODO: Implement Srl, is a CB instruction
-                (0, false)
+                let carry = val & 0x01 == 0x01;
+                let result = val >> 1;
+                (result, carry)
             }
         };
 
@@ -560,7 +633,7 @@ impl Cpu {
             self.f.set(FlagRegister::Z, result == 0);
         }
 
-        self.set_register(reg, result);
+        result
     }
 
     fn check_conditional(&mut self, condition: Condition) -> bool {
