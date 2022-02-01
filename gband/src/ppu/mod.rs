@@ -2,10 +2,12 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
+mod cgb_palette;
 mod fifo_mode;
 mod lcd_control;
 mod lcd_status;
 
+use cgb_palette::CgbPalette;
 use fifo_mode::FifoMode;
 use lcd_control::LcdControl;
 use lcd_status::LcdStatus;
@@ -26,14 +28,18 @@ pub struct Ppu {
     scroll_x: u8,
     scroll_y: u8,
 
-    vram: [u8; 0x3FFF],
+    vram: [u8; 0x4000],
     vram_bank_register: bool,
-    oam: [u8; 0x9f],
-    lcd_control_reg: LcdControl,
-    lcd_status_reg: LcdStatus,
+    oam: [u8; 0xa0],
+
+    cgb_bg_palette: CgbPalette,
+    cgb_obj_palette: CgbPalette,
 
     greyscale_bg_palette: u8,
     greyscale_obj_palette: [u8; 2],
+
+    lcd_control_reg: LcdControl,
+    lcd_status_reg: LcdStatus,
 
     background_pixel_pipeline: u128,
     sprite_pixel_pipeline: u128,
@@ -56,11 +62,22 @@ impl Default for Ppu {
             scroll_x: 0,
             scroll_y: 0,
 
-            vram: [0u8; 0x3FFF],
+            vram: [0u8; 0x4000],
             vram_bank_register: false,
-            oam: [0u8; 0x9f],
+            oam: [0u8; 0xa0],
+
             lcd_control_reg: Default::default(),
             lcd_status_reg: Default::default(),
+
+            // Boot ROM initializes the Background palettes to white
+            cgb_bg_palette: CgbPalette {
+                data: [0xFFu8; 0x40],
+                ..Default::default()
+            },
+            cgb_obj_palette: CgbPalette {
+                data: [0xFFu8; 0x40],
+                ..Default::default()
+            },
 
             greyscale_bg_palette: 0,
             greyscale_obj_palette: [0; 2],
@@ -189,11 +206,24 @@ impl Ppu {
             0xFF41 => self.write_lcd_status(data),
             0xFF42 => self.scroll_y = data,
             0xFF43 => self.scroll_x = data,
+            0xFF44 => {
+                // ly is Read-Only
+            }
             0xFF45 => self.y_compare = data,
             0xFF47 => self.greyscale_bg_palette = data,
             0xFF48 | 0xFF49 => self.greyscale_obj_palette[(addr & 1) as usize] = data,
             0xFF4A => self.window_y = data,
             0xFF4B => self.window_x = data,
+            0xFF4C => {
+                // rKEY0 is blocked after boot
+            }
+            0xFF4D => {
+                // I don't know what rKEY1 is used for, but it's probably blocked after boot
+            }
+            0xFF68 => self.cgb_bg_palette.write_spec(data),
+            0xFF69 => self.cgb_bg_palette.write_data(data, self.fifo_mode),
+            0xFF6A => self.cgb_obj_palette.write_spec(data),
+            0xFF6B => self.cgb_obj_palette.write_data(data, self.fifo_mode),
             _ => {
                 // Address not recognised, do nothing
             }
@@ -212,6 +242,18 @@ impl Ppu {
             0xFF48 | 0xFF49 => self.greyscale_obj_palette[(addr & 1) as usize],
             0xFF4A => self.window_y,
             0xFF4B => self.window_x,
+            0xFF4C => {
+                // rKEY0 is blocked after boot
+                0xFF
+            }
+            0xFF4D => {
+                // I don't know what rKEY1 is used for, but it's probably blocked after boot
+                0xFF
+            }
+            0xFF68 => self.cgb_bg_palette.read_spec(),
+            0xFF69 => self.cgb_bg_palette.read_data(self.fifo_mode),
+            0xFF6A => self.cgb_obj_palette.read_spec(),
+            0xFF6B => self.cgb_obj_palette.read_data(self.fifo_mode),
             _ => {
                 // Address not recognised, do nothing
                 0

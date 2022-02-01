@@ -64,23 +64,23 @@ impl CpuBus<'_> {
             0x0000..=0x7fff => {
                 // Cartridge
                 self.write_cartridge(addr, data)
-            }
+            },
             0x8000..=0x9FFF => {
                 // VRAM
                 self.ppu.write_vram(addr, data)
-            }
+            },
             0xA000..=0xBFFF => {
                 // Cartridge RAM
                 self.write_cartridge(addr, data)
-            }
+            },
             0xC000..=0xFDFF => {
                 // WRAM
                 self.write_ram(addr, data)
-            }
+            },
             0xFE00..=0xFE9F => {
                 // OAM
                 self.ppu.write_oam(addr, data)
-            }
+            },
             0xFF00 => {
                 // Joypad
                 self.write_joypad_reg(data)
@@ -118,7 +118,7 @@ impl CpuBus<'_> {
             },
             _ => {
                 // TODO: handle full memory map
-            }
+            },
         }
     }
 
@@ -127,23 +127,23 @@ impl CpuBus<'_> {
             0x0000..=0x7fff => {
                 // Cartridge
                 self.read_cartridge(addr)
-            }
+            },
             0x8000..=0x9FFF => {
                 // VRAM
                 self.ppu.read_vram(addr)
-            }
+            },
             0xA000..=0xBFFF => {
                 // Cartridge RAM
                 self.read_cartridge(addr)
-            }
+            },
             0xC000..=0xFDFF => {
                 // WRAM
                 self.read_ram(addr)
-            }
+            },
             0xFE00..=0xFE9F => {
                 // OAM
                 self.ppu.read_oam(addr)
-            }
+            },
             0xFF00 => {
                 // Joypad
                 self.read_joypad_reg()
@@ -164,7 +164,7 @@ impl CpuBus<'_> {
             _ => {
                 // TODO: handle full memory map
                 0
-            }
+            },
         }
     }
 

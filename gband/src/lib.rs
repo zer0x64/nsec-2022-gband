@@ -34,9 +34,11 @@ pub struct Emulator {
     // 0x7F instead of 0x80 is not a mistake, as the last byte is used to access interupts
     hram: [u8; 0x7F],
     interrupts: InterruptState,
+    double_speed_mode: bool,
 
     // == PPU Related Hardware == //
     ppu: Ppu,
+    cgb_mode: bool,
 
     // == IP Related Hardware == //
 
@@ -52,6 +54,7 @@ pub struct Emulator {
 impl Emulator {
     pub fn new(rom: &[u8], save_data: Option<&[u8]>) -> Result<Self, RomParserError> {
         let cartridge = Cartridge::load(rom, save_data)?;
+        let cgb_mode = cartridge.is_cgb();
 
         let emulator = Self {
             cartridge,
@@ -60,8 +63,10 @@ impl Emulator {
 
             wram: [0u8; WRAM_BANK_SIZE as usize * 8],
             hram: [0u8; 0x7F],
+            double_speed_mode: false,
 
             ppu: Ppu::new(),
+            cgb_mode,
 
             joypad_state: Default::default(),
             joypad_register: Default::default(),
@@ -76,13 +81,13 @@ impl Emulator {
     pub fn clock(&mut self) -> Option<Frame> {
         self.clock_count += 1;
 
-        // Clock PPU every 2 cycles
-        if self.clock_count == 1 || self.clock_count == 3 {
-            self.ppu.clock();
-        };
+        // clock_count is at ~4MHz
+        // PPU is clocked at ~4MHz
+        self.ppu.clock();
 
-        // Clock CPU every 4 cycles
-        if self.clock_count == 2 || self.clock_count == 4 {
+        // We clock CPU on M-cycles, at ~1MHz on regular mode and ~2MHz on CGB double speed mode
+        // This means we clock it every 2 or 4 cycles
+        if (self.clock_count == 2 && self.double_speed_mode) || self.clock_count == 4 {
             let mut cpu_bus = borrow_cpu_bus!(self);
             self.cpu.clock(&mut cpu_bus);
 
@@ -91,6 +96,7 @@ impl Emulator {
             }
         };
 
+        // Return a frame if available
         self.ppu.ready_frame()
     }
 

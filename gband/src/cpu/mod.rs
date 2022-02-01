@@ -54,6 +54,7 @@ impl Default for Cpu {
             l: 0x0D,
             a: 0x11,
             f: FlagRegister::Z,
+
             sp: 0xFFFE,
             pc: 0x0100,
 
