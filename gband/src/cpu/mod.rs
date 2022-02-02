@@ -54,7 +54,7 @@ impl Default for Cpu {
             a: 0x11,
             f: FlagRegister::Z,
             sp: 0xFFFE,
-            pc: 0x100,
+            pc: 0x0100,
             cycles: 0,
 
             opcode_latch: Opcode::Unknown
@@ -302,7 +302,7 @@ impl Cpu {
                 self.set_register_pair(source, self.get_register_pair(source).wrapping_sub(1));
             }
             Opcode::Ld16HLSPSigned => {
-                // Two's complement convertion
+                // Two's complement conversion
                 let immediate = self.read_immediate(bus) as i8 as u16;
                 let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
                 let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
@@ -718,9 +718,11 @@ mod tests {
         pub cartridge: Cartridge,
         pub cpu: Cpu,
         pub wram: [u8; WRAM_BANK_SIZE as usize * 8],
+        pub hram: [u8; 0x7F],
         pub joypad_state: JoypadState,
         pub joypad_register: u8,
         pub ppu: Ppu,
+        pub serial_port_buffer: alloc::vec::Vec<u8>,
     }
 
     impl MockEmulator {
@@ -733,9 +735,11 @@ mod tests {
                 cartridge,
                 cpu: Default::default(),
                 wram: [0u8; WRAM_BANK_SIZE as usize * 8],
+                hram: [0u8; 0x7F],
                 joypad_state: Default::default(),
                 joypad_register: 0,
                 ppu: Default::default(),
+                serial_port_buffer: alloc::vec::Vec::with_capacity(256),
             };
 
             Ok(emulator)
@@ -830,6 +834,47 @@ mod tests {
         execute_n(&mut emu, 2);
         assert_eq!(emu.cpu.b, 1);
         assert_eq!(emu.cpu.a, 255);
+    }
+
+    #[test]
+    fn test_ld_r_mem() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        emu.cpu.pc = 0xC000;
+        emu.wram[0] = 0xFA; // A,(nn)
+        emu.wram[1] = 0x00;
+        emu.wram[2] = 0xD0;
+        emu.wram[3] = 0x7E; // A,(HL)
+        emu.wram[0x1000] = 20;
+        emu.wram[0x1010] = 42;
+
+        emu.cpu.h = 0xD0;
+        emu.cpu.l = 0x10;
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.a, 20);
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.a, 42);
+    }
+
+    #[test]
+    fn test_ldh() {
+        let mut emu = MockEmulator::new().unwrap();
+
+        emu.cpu.pc = 0xC000;
+        emu.wram[0] = 0xF2; // A,(0xFF00 + C)
+        emu.wram[1] = 0xF0; // A,(0xFF00 + n)
+        emu.wram[2] = 0xA0;
+        emu.hram[0x10] = 42; // At 0xFF80+0x10
+        emu.hram[0x20] = 69; // At 0xFF80+0x20
+        emu.cpu.c = 0x90;
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.a, 42);
+
+        execute_n(&mut emu, 1);
+        assert_eq!(emu.cpu.a, 69);
     }
 
     #[test]

@@ -9,7 +9,7 @@ pub type Frame = Box<[u8; FRAME_WIDTH * FRAME_HEIGHT]>;
 
 pub struct Ppu {
     frame: Option<Frame>,
-    cycles: u32
+    cycles: u16
 }
 
 impl Default for Ppu {
@@ -36,7 +36,7 @@ impl Ppu {
     pub fn ready_frame(&mut self) -> Option<Frame> {
         // TODO: Only returns when the frame is actually done
 
-        if self.cycles == 1024 {
+        if self.cycles >= (FRAME_WIDTH * FRAME_HEIGHT) as u16 {
             self.cycles = 0;
 
             // Returns the current frame buffer
