@@ -12,6 +12,8 @@ use fifo_mode::FifoMode;
 use lcd_control::LcdControl;
 use lcd_status::LcdStatus;
 
+use crate::bus::PpuBus;
+
 pub const FRAME_WIDTH: usize = 160;
 pub const FRAME_HEIGHT: usize = 144;
 
@@ -101,7 +103,7 @@ impl Ppu {
         ppu
     }
 
-    pub fn clock(&mut self) {
+    pub fn clock(&mut self, bus: &mut PpuBus) {
         // TODO: Actual rendering
         self.cycle += 1;
 
@@ -173,31 +175,40 @@ impl Ppu {
         }
     }
 
-    pub fn write_oam(&mut self, addr: u16, data: u8) {
+    pub fn write_oam(&mut self, addr: u16, data: u8, force: bool) {
         match self.fifo_mode {
             FifoMode::OamScan | FifoMode::Drawing => {
                 // Calls are blocked during this mode
-                // Do nothing
+                // Do nothing, except if this is called by the OAM DMA
+                if !force {
+                    return
+                }
             }
             _ => {
-                let addr = addr & 0x7F;
-                self.oam[addr as usize] = data;
+                // Continue normally
             }
         }
+
+        let addr = addr & 0x7F;
+        self.oam[addr as usize] = data;
     }
 
-    pub fn read_oam(&self, addr: u16) -> u8 {
+    pub fn read_oam(&self, addr: u16, force: bool) -> u8 {
         match self.fifo_mode {
             FifoMode::OamScan | FifoMode::Drawing => {
                 // Calls are blocked during this mode
-                // Do nothing and return trash
-                0xFF
+                // Do nothing and return trash, except if this is called by the OAM DMA
+                if !force {
+                    return 0xFF;
+                }
             }
             _ => {
-                let addr = addr & 0x7F;
-                self.oam[addr as usize]
+                // Continue normally
             }
         }
+
+        let addr = addr & 0x7F;
+        self.oam[addr as usize]
     }
 
     pub fn write(&mut self, addr: u16, data: u8) {

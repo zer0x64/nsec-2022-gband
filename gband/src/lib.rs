@@ -8,6 +8,7 @@ pub mod bus; // TODO: Revert pub added for criterion
 mod cartridge;
 mod cpu;
 mod interrupt;
+mod oam_dma;
 mod joypad_state;
 mod ppu;
 mod rgb_palette;
@@ -21,6 +22,7 @@ pub use ppu::{Frame, Ppu, FRAME_HEIGHT, FRAME_WIDTH};
 
 // TODO: Revert pub added for criterion
 pub use cartridge::Cartridge;
+pub use oam_dma::OamDma;
 
 const WRAM_BANK_SIZE: u16 = 0x1000; // 4KiB
 
@@ -35,6 +37,7 @@ pub struct Emulator {
     hram: [u8; 0x7F],
     interrupts: InterruptState,
     double_speed_mode: bool,
+    oam_dma: OamDma,
 
     // == PPU Related Hardware == //
     ppu: Ppu,
@@ -64,6 +67,7 @@ impl Emulator {
             wram: [0u8; WRAM_BANK_SIZE as usize * 8],
             hram: [0u8; 0x7F],
             double_speed_mode: false,
+            oam_dma: Default::default(),
 
             ppu: Ppu::new(),
             cgb_mode,
@@ -83,7 +87,8 @@ impl Emulator {
 
         // clock_count is at ~4MHz
         // PPU is clocked at ~4MHz
-        self.ppu.clock();
+        let mut ppu_bus = borrow_ppu_bus!(self);
+        self.ppu.clock(&mut ppu_bus);
 
         // We clock CPU on M-cycles, at ~1MHz on regular mode and ~2MHz on CGB double speed mode
         // This means we clock it every 2 or 4 cycles

@@ -3,7 +3,9 @@ use crate::InterruptReg;
 use crate::InterruptState;
 use crate::JoypadState;
 use crate::Ppu;
+use crate::Cpu;
 use crate::WRAM_BANK_SIZE;
+use crate::oam_dma::OamDma;
 
 // TODO: Revert macro_export added for criterion
 #[macro_export]
@@ -13,6 +15,7 @@ macro_rules! borrow_cpu_bus {
             &mut $owner.wram,
             &mut $owner.hram,
             &mut $owner.interrupts,
+            &mut $owner.oam_dma,
             &mut $owner.cartridge,
             &mut $owner.ppu,
             &$owner.joypad_state,
@@ -26,6 +29,7 @@ pub struct CpuBus<'a> {
     wram: &'a mut [u8; WRAM_BANK_SIZE as usize * 8],
     hram: &'a mut [u8; 0x7F],
     interrupts: &'a mut InterruptState,
+    oam_dma: &'a mut OamDma,
     cartridge: &'a mut Cartridge,
     ppu: &'a mut Ppu,
     joypad_state: &'a JoypadState,
@@ -39,6 +43,7 @@ impl<'a> CpuBus<'a> {
         wram: &'a mut [u8; WRAM_BANK_SIZE as usize * 8],
         hram: &'a mut [u8; 0x7F],
         interrupts: &'a mut InterruptState,
+        oam_dma: &'a mut OamDma,
         cartridge: &'a mut Cartridge,
         ppu: &'a mut Ppu,
         joypad_state: &'a JoypadState,
@@ -49,6 +54,7 @@ impl<'a> CpuBus<'a> {
             wram,
             hram,
             interrupts,
+            oam_dma,
             cartridge,
             ppu,
             joypad_state,
@@ -60,6 +66,45 @@ impl<'a> CpuBus<'a> {
 
 impl CpuBus<'_> {
     pub fn write(&mut self, addr: u16, data: u8) {
+        match self.oam_dma.cycle {
+            Some(_) => {
+                // Wraps regular CPU writes to only allow HRAM calls during OAM DMA
+                match addr {
+                    0xFF80..=0xFFFE => {
+                        self.write_without_dma_check(addr, data, false)
+                    },
+                    _ => { 
+                        //Write is blocked by dma
+                    }
+                }
+            },
+            None => {
+                self.write_without_dma_check(addr, data, false)
+            }
+        }
+    }
+
+    pub fn read(&self, addr: u16) -> u8 { 
+        match self.oam_dma.cycle {
+            Some(_) => {
+                // Wraps regular CPU read to only allow HRAM calls during OAM DMA
+                match addr {
+                    0xFF80..=0xFFFE => {
+                        self.read_without_dma_check(addr, false)
+                    },
+                    _ => { 
+                        // Read is blocked by dma, returning trash data
+                        0xFF
+                    }
+                }
+            },
+            None => {
+                self.read_without_dma_check(addr, false)
+            }
+        }
+    }
+
+    pub fn write_without_dma_check(&mut self, addr: u16, data: u8, called_from_dma: bool) {
         match addr {
             0x0000..=0x7fff => {
                 // Cartridge
@@ -79,7 +124,7 @@ impl CpuBus<'_> {
             },
             0xFE00..=0xFE9F => {
                 // OAM
-                self.ppu.write_oam(addr, data)
+                self.ppu.write_oam(addr, data, called_from_dma)
             },
             0xFF00 => {
                 // Joypad
@@ -103,7 +148,11 @@ impl CpuBus<'_> {
             0xFF02 => {
                 // Serial transfer control (SC)
             },
-            0xFF40..=0xFF4F => {
+            0xFF46 => {
+                // OAM DMA
+                self.request_oam_dma(data)
+            },
+            0xFF40..=0xFF45 | 0xFF47..=0xFF6F => {
                 // PPU control reg
                 self.ppu.write(addr, data)
             },
@@ -122,7 +171,7 @@ impl CpuBus<'_> {
         }
     }
 
-    pub fn read(&self, addr: u16) -> u8 {
+    pub fn read_without_dma_check(&self, addr: u16, called_from_dma: bool) -> u8 {
         match addr {
             0x0000..=0x7fff => {
                 // Cartridge
@@ -142,7 +191,7 @@ impl CpuBus<'_> {
             },
             0xFE00..=0xFE9F => {
                 // OAM
-                self.ppu.read_oam(addr)
+                self.ppu.read_oam(addr, called_from_dma)
             },
             0xFF00 => {
                 // Joypad
@@ -151,7 +200,11 @@ impl CpuBus<'_> {
             0xFF0F => {
                 self.interrupts.status.bits()
             },
-            0xFF40..=0xFF4F => {
+            0xFF46 => {
+                // OAM DMA
+                self.read_oam_dma()
+            },
+            0xFF40..=0xFF45 | 0xFF47..=0xFF6F => {
                 // PPU control reg
                 self.ppu.read(addr)
             },
@@ -213,5 +266,58 @@ impl CpuBus<'_> {
 
     pub fn read_joypad_reg(&self) -> u8 {
         *self.joypad_register
+    }
+
+    pub fn request_oam_dma(&mut self, source: u8) {
+        match source {
+            0x00..=0x7F | 0xA0..=0xFD => {
+                // Source is ROM or RAM, DMA is valid
+                *self.oam_dma = OamDma::new(source)
+            },
+            _ => {
+                // Source is invalid. Write the new source but don't start a transfer
+                *self.oam_dma = OamDma {
+                    cycle: None,
+                    source
+                }
+            }
+        }
+        
+    }
+
+    pub fn read_oam_dma(&self) -> u8 {
+        self.oam_dma.source
+    }
+
+    pub fn get_oam_dma(&self) -> OamDma {
+        self.oam_dma.clone()
+    }
+
+    pub fn set_oam_dma(&mut self, oam_dma: OamDma) {
+        *self.oam_dma = oam_dma;
+    }
+}
+
+#[macro_export]
+macro_rules! borrow_ppu_bus {
+    ($owner:ident) => {{
+        $crate::bus::PpuBus::borrow(
+            &mut $owner.cpu,
+        )
+    }};
+}
+
+pub struct PpuBus<'a> {
+    cpu: &'a mut Cpu,
+}
+
+impl<'a> PpuBus<'a> {
+    #[allow(clippy::too_many_arguments)] // it's fine, it's used by a macro
+    pub fn borrow(
+        cpu: &'a mut Cpu,
+    ) -> Self {
+        Self {
+            cpu
+        }
     }
 }

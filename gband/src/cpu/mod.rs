@@ -67,6 +67,8 @@ impl Default for Cpu {
 
 impl Cpu {
     pub fn clock(&mut self, bus: &mut CpuBus) {
+        self.handle_oam_dma(bus);
+
         // Fetch/Execute overlap, last cycle of execute runs at the same time as the next fetch
         if self.cycles != 0 {
             self.execute(bus);
@@ -711,6 +713,37 @@ impl Cpu {
             }
         }
     }
+
+    fn handle_oam_dma(&mut self, bus: &mut CpuBus) {
+        // OAM DMA
+        let mut oam_dma = bus.get_oam_dma();
+        let oam_dma_source = oam_dma.source;
+        let (is_oam_dma, reset_oam_dma) = match &mut oam_dma.cycle {
+            Some(c) => {
+                // Each cycle, DMA reads and write one byte from source to destination
+                let data = bus.read_without_dma_check(((oam_dma_source as u16) << 8) | (*c as u16), true);
+                bus.write_without_dma_check(0xFE00 | (*c as u16), data, true);
+                *c+= 1;
+
+
+                (true, *c == 0xA0)
+            }
+            _ => {
+                // No DMA currently
+                (false, false)
+            }
+        };
+
+        // Borrow checker hack to update with the new state
+        if reset_oam_dma {
+            // Stop DMA
+            oam_dma.cycle = None
+        }
+        if is_oam_dma {
+            // Update the value
+            bus.set_oam_dma(oam_dma);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -719,6 +752,7 @@ mod tests {
     use crate::Cartridge;
     use crate::InterruptState;
     use crate::JoypadState;
+    use crate::OamDma;
     use crate::Ppu;
     use crate::RomParserError;
     use crate::WRAM_BANK_SIZE;
@@ -730,6 +764,7 @@ mod tests {
         pub wram: [u8; WRAM_BANK_SIZE as usize * 8],
         pub hram: [u8; 0x7F],
         pub interrupts: InterruptState,
+        pub oam_dma: OamDma,
         pub joypad_state: JoypadState,
         pub joypad_register: u8,
         pub ppu: Ppu,
@@ -748,6 +783,7 @@ mod tests {
                 wram: [0u8; WRAM_BANK_SIZE as usize * 8],
                 hram: [0u8; 0x7F],
                 interrupts: Default::default(),
+                oam_dma: Default::default(),
                 joypad_state: Default::default(),
                 joypad_register: 0,
                 ppu: Default::default(),
