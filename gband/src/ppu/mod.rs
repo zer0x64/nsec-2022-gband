@@ -181,7 +181,7 @@ impl Ppu {
                 // Calls are blocked during this mode
                 // Do nothing, except if this is called by the OAM DMA
                 if !force {
-                    return
+                    return;
                 }
             }
             _ => {

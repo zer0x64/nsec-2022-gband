@@ -8,7 +8,7 @@ impl OamDma {
     pub fn new(source: u8) -> Self {
         Self {
             source,
-            cycle: Some(0)
+            cycle: Some(0),
         }
     }
 }
