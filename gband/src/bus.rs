@@ -287,17 +287,31 @@ impl CpuBus<'_> {
 #[macro_export]
 macro_rules! borrow_ppu_bus {
     ($owner:ident) => {{
-        $crate::bus::PpuBus::borrow(&mut $owner.cpu)
+        $crate::bus::PpuBus::borrow(&mut $owner.interrupts)
     }};
 }
 
 pub struct PpuBus<'a> {
-    cpu: &'a mut Cpu,
+    interrupts: &'a mut InterruptState,
 }
 
 impl<'a> PpuBus<'a> {
     #[allow(clippy::too_many_arguments)] // it's fine, it's used by a macro
-    pub fn borrow(cpu: &'a mut Cpu) -> Self {
-        Self { cpu }
+    pub fn borrow(interrupts: &'a mut InterruptState) -> Self {
+        Self { interrupts }
+    }
+}
+
+impl PpuBus<'_> {
+    pub fn get_interrupt_state(&self) -> InterruptState {
+        *self.interrupts
+    }
+
+    pub fn set_interrupt_state(&mut self, interrupts: InterruptState) {
+        *self.interrupts = interrupts
+    }
+
+    pub fn request_interrupt(&mut self, interrupt: InterruptReg) {
+        self.interrupts.status.insert(interrupt)
     }
 }

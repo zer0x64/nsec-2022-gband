@@ -13,6 +13,7 @@ use lcd_control::LcdControl;
 use lcd_status::LcdStatus;
 
 use crate::bus::PpuBus;
+use crate::InterruptReg;
 
 pub const FRAME_WIDTH: usize = 160;
 pub const FRAME_HEIGHT: usize = 144;
@@ -107,9 +108,26 @@ impl Ppu {
         // TODO: Actual rendering
         self.cycle += 1;
 
-        if self.cycle == 80 {
-            self.fifo_mode = FifoMode::Drawing;
-        } else if self.cycle == 456 {
+        if self.y < 153 {
+            match self.cycle {
+                80 => {
+                    self.fifo_mode = FifoMode::Drawing;
+                }
+                352 => {
+                    // Hardcodes HBLANK for now
+                    self.fifo_mode = FifoMode::HBlank;
+                    if self
+                        .lcd_status_reg
+                        .contains(LcdStatus::HBANLK_INTERUPT_SOURCE)
+                    {
+                        bus.request_interrupt(InterruptReg::LCD_STAT);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if self.cycle == 456 {
             self.cycle = 0;
             self.x = 0;
             self.y += 1;
@@ -118,14 +136,43 @@ impl Ppu {
                 143..=153 => {
                     // We are in VBLANK
                     self.fifo_mode = FifoMode::VBlank;
+
+                    if self.y == 143 {
+                        // Request VBLANK interrupt
+                        bus.request_interrupt(InterruptReg::VBLANK);
+
+                        if self
+                            .lcd_status_reg
+                            .contains(LcdStatus::VBANLK_INTERUPT_SOURCE)
+                        {
+                            bus.request_interrupt(InterruptReg::LCD_STAT);
+                        }
+                    }
                 }
                 154 => {
                     // End of the frame
                     self.y = 0;
                     self.fifo_mode = FifoMode::OamScan;
+
+                    if self.lcd_status_reg.contains(LcdStatus::OAM_INTERUPT_SOURCE) {
+                        bus.request_interrupt(InterruptReg::LCD_STAT);
+                    }
                 }
                 _ => {
                     self.fifo_mode = FifoMode::OamScan;
+
+                    if self.lcd_status_reg.contains(LcdStatus::OAM_INTERUPT_SOURCE) {
+                        bus.request_interrupt(InterruptReg::LCD_STAT);
+                    }
+                }
+            };
+
+            if self.y == self.y_compare {
+                if self
+                    .lcd_status_reg
+                    .contains(LcdStatus::LYC_EQ_LC_INTERUPT_SOURCE)
+                {
+                    bus.request_interrupt(InterruptReg::LCD_STAT);
                 }
             };
         };
@@ -288,7 +335,7 @@ impl Ppu {
         let status_reg = status_reg | (data & mask);
 
         self.lcd_status_reg = LcdStatus::from_bits(status_reg)
-            .expect("the reg can take 8 bits, so no value shoul fail");
+            .expect("the reg can take 8 bits, so no value should fail");
     }
 
     fn read_lcd_status(&self) -> u8 {
