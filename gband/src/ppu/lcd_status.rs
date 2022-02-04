@@ -19,7 +19,6 @@ impl LcdStatus {
     pub fn set_mode(&mut self, mode: FifoMode) {
         let mode: u8 = mode.into();
         let val = self.bits() & 0xfc | mode;
-        *self = LcdStatus::from_bits(val)
-            .expect("The bitfield accepts 8 bits so this should never fail");
+        self.bits = val;
     }
 }

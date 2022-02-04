@@ -121,9 +121,6 @@ impl Cartridge {
     }
 
     pub fn is_cgb(&self) -> bool {
-        match self.header.cgb_flag {
-            CgbFlag::NoCgb => false,
-            _ => true,
-        }
+        !matches!(self.header.cgb_flag, CgbFlag::NoCgb)
     }
 }

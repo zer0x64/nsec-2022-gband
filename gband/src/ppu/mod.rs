@@ -292,7 +292,7 @@ impl Ppu {
     }
 
     fn read_lcd_status(&self) -> u8 {
-        let mut status_reg = self.lcd_status_reg.clone();
+        let mut status_reg = self.lcd_status_reg;
 
         // Those bits are constantly changed, so might as well update them only when needed
         status_reg.set(LcdStatus::LYC_EQ_LC, self.y == self.y_compare);
