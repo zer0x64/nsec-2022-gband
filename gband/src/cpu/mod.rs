@@ -1,5 +1,6 @@
 mod decoder;
 
+use alloc::format;
 use bitflags::bitflags;
 
 use crate::{bus::CpuBus, OamDma};
@@ -32,6 +33,8 @@ pub struct Cpu {
     pub cycles: u8,
     pub opcode_latch: Opcode,
     pub interrupt_master_enable: bool,
+    pub ime_pending: Option<bool>,
+    pub halted: bool,
 }
 
 impl Default for Cpu {
@@ -39,13 +42,13 @@ impl Default for Cpu {
         Self {
             // Values after CGB Boot ROM
             b: 0,
-            c: 0,
-            d: 0xFF,
-            e: 0x56,
-            h: 0,
-            l: 0x0D,
+            c: 0x13,
+            d: 0x00,
+            e: 0xD8,
+            h: 0x01,
+            l: 0x4D,
             a: 0x11,
-            f: FlagRegister::Z,
+            f: FlagRegister::Z | FlagRegister::H | FlagRegister::C,
 
             sp: 0xFFFE,
             pc: 0x0100,
@@ -53,6 +56,8 @@ impl Default for Cpu {
             cycles: 0,
             opcode_latch: Opcode::Unknown,
             interrupt_master_enable: false,
+            ime_pending: None,
+            halted: false,
         }
     }
 }
@@ -62,7 +67,7 @@ impl Cpu {
         self.handle_oam_dma(bus);
 
         // Fetch/Execute overlap, last cycle of execute runs at the same time as the next fetch
-        if self.cycles != 0 {
+        if !self.halted && self.cycles != 0 {
             self.execute(bus);
 
             // We are not emulating cycle-accurate yet, so just reset the latch to unknown to noop the remaining cycles
@@ -72,8 +77,88 @@ impl Cpu {
         }
 
         if self.cycles == 0 {
-            self.fetch(bus);
+            match self.ime_pending {
+                Some(true) => self.ime_pending = Some(false),
+                Some(false) => {
+                    self.interrupt_master_enable = true;
+                    self.ime_pending = None;
+                }
+                None => {}
+            }
+
+            self.handle_interrupt(bus);
+
+            if !self.halted {
+                self.fetch(bus);
+            }
         }
+    }
+
+    fn handle_interrupt(&mut self, bus: &mut CpuBus) {
+        let interrupts_status = bus.read(0xFF0F);
+        let interrupts_enable = bus.read(0xFFFF);
+
+        // Get the highest priority interrupt requested, bit 0 is higher priority
+        let pending = interrupts_enable & interrupts_status;
+        let pending_index = pending.trailing_zeros() as u16;
+
+        if pending != 0 {
+            // Wake up from halt, even if ime is not set
+            self.halted = false;
+
+            if self.interrupt_master_enable {
+                // Unset ime and request flag
+                self.interrupt_master_enable = false;
+                bus.write(0xFF0F, interrupts_status & !(1 << pending_index));
+
+                // Save pc and run ISR
+                self.push_stack(bus, self.pc);
+                self.pc = 0x0040 + 0x0008 * pending_index;
+
+                // The ISR takes 5 cycles
+                self.cycles = 5;
+            } else {
+                // Halt bug: pc is not incremented properly
+                // TODO: Check if this is actually right...? Does this fetch twice, or fetch and not increase pc...?
+                // TODO: If it's fetch and not increase pc, this will need to be a flag to check during fetch
+                self.cycles += 1;
+            }
+        }
+    }
+
+    fn trace(&mut self, instr: alloc::string::String, pc_rewind: u16) {
+        let a = self.a;
+        let bc = self.get_register_pair(RegisterPair::BC);
+        let de = self.get_register_pair(RegisterPair::DE);
+        let hl = self.get_register_pair(RegisterPair::HL);
+
+        let z = if self.f.contains(FlagRegister::Z) {
+            'Z'
+        } else {
+            '-'
+        };
+        let n = if self.f.contains(FlagRegister::N) {
+            'N'
+        } else {
+            '-'
+        };
+        let h = if self.f.contains(FlagRegister::H) {
+            'H'
+        } else {
+            '-'
+        };
+        let c = if self.f.contains(FlagRegister::C) {
+            'C'
+        } else {
+            '-'
+        };
+
+        let sp = self.sp;
+        let pc = self.pc - pc_rewind;
+
+        let instr = instr.to_lowercase();
+
+        log::info!("A:{a:02X} F:{z}{n}{h}{c} BC:{bc:04X} DE:{de:04x} HL:{hl:04x} SP:{sp:04x} PC:{pc:04x} | {instr}");
     }
 
     // TODO: Remove pub added for criterion
@@ -88,32 +173,43 @@ impl Cpu {
         match self.opcode_latch {
             Opcode::Unknown | Opcode::Nop => {
                 // noop
+                if let Opcode::Nop = self.opcode_latch {
+                    self.trace(format!("nop"), 1);
+                }
             }
             Opcode::CBPrefix => {
                 self.run_cb(bus);
             }
             Opcode::LdRR(target, source) => {
+                self.trace(format!("ld {target:?},{source:?}"), 1);
                 self.set_register(target, self.get_register(source));
             }
             Opcode::LdRImm(target) => {
                 let immediate = self.read_immediate(bus);
+                self.trace(format!("ld {target:?},{immediate}"), 2);
                 self.set_register(target, immediate);
             }
             Opcode::LdRMem(target, source) => {
                 let val = match source {
-                    OpMemAddress16::Register(source) => bus.read(self.get_register_pair(source)),
+                    OpMemAddress16::Register(source) => {
+                        self.trace(format!("ld {target:?},[{source:?}]"), 1);
+                        bus.read(self.get_register_pair(source))
+                    }
                     OpMemAddress16::RegisterIncrease(source) => {
+                        self.trace(format!("ld {target:?},[{source:?}+]"), 1);
                         let reg = self.get_register_pair(source);
                         self.set_register_pair(source, reg.wrapping_add(1));
                         bus.read(reg)
                     }
                     OpMemAddress16::RegisterDecrease(source) => {
+                        self.trace(format!("ld {target:?},[{source:?}-]"), 1);
                         let reg = self.get_register_pair(source);
                         self.set_register_pair(source, reg.wrapping_sub(1));
                         bus.read(reg)
                     }
                     OpMemAddress16::Immediate => {
                         let addr = self.read_immediate16(bus);
+                        self.trace(format!("ld {target:?},[${addr:04x}]"), 3);
                         bus.read(addr)
                     }
                 };
@@ -122,24 +218,34 @@ impl Cpu {
             }
             Opcode::LdMemR(target, source) => {
                 let addr = match target {
-                    OpMemAddress16::Register(target) => self.get_register_pair(target),
+                    OpMemAddress16::Register(target) => {
+                        self.trace(format!("ld [{target:?}],{source:?}"), 1);
+                        self.get_register_pair(target)
+                    }
                     OpMemAddress16::RegisterIncrease(target) => {
+                        self.trace(format!("ld [{target:?}+],{source:?}"), 1);
                         let reg = self.get_register_pair(target);
                         self.set_register_pair(target, reg.wrapping_add(1));
                         reg
                     }
                     OpMemAddress16::RegisterDecrease(target) => {
+                        self.trace(format!("ld [{target:?}-],{source:?}"), 1);
                         let reg = self.get_register_pair(target);
                         self.set_register_pair(target, reg.wrapping_sub(1));
                         reg
                     }
-                    OpMemAddress16::Immediate => self.read_immediate16(bus),
+                    OpMemAddress16::Immediate => {
+                        let temp = self.read_immediate16(bus);
+                        self.trace(format!("ld [${temp:04x}],{source:?}"), 3);
+                        temp
+                    }
                 };
 
                 bus.write(addr, self.get_register(source));
             }
             Opcode::LdMemImm(target) => {
                 let immediate = self.read_immediate(bus);
+                self.trace(format!("ld [{target:?}],{immediate}"), 2);
                 bus.write(self.get_register_pair(target), immediate);
             }
             Opcode::LdhRead(target, source) => {
@@ -149,6 +255,14 @@ impl Cpu {
                         OpMemAddress8::Immediate => self.read_immediate(bus),
                     } as u16;
 
+                self.trace(
+                    format!("ldh {target:?},[${addr:04x}]"),
+                    if let OpMemAddress8::Immediate = source {
+                        2
+                    } else {
+                        1
+                    },
+                );
                 self.set_register(target, bus.read(addr));
             }
             Opcode::LdhWrite(target, source) => {
@@ -158,41 +272,58 @@ impl Cpu {
                         OpMemAddress8::Immediate => self.read_immediate(bus),
                     } as u16;
 
+                self.trace(
+                    format!("ldh [${addr:04x}],{source:?}"),
+                    if let OpMemAddress8::Immediate = target {
+                        2
+                    } else {
+                        1
+                    },
+                );
                 bus.write(addr, self.get_register(source));
             }
             Opcode::Ld16RImm(target) => {
                 let immediate = self.read_immediate16(bus);
+                self.trace(format!("ld {target:?},{immediate}"), 3);
                 self.set_register_pair(target, immediate);
             }
             Opcode::Ld16MemSp => {
                 let addr = self.read_immediate16(bus);
+                self.trace(format!("ld [${addr:04x}],sp"), 3);
                 bus.write(addr, (self.sp & 0x00FF) as u8);
                 bus.write(addr + 1, (self.sp >> 8) as u8);
             }
             Opcode::Ld16SpHL => {
+                self.trace(format!("ld sp,hl"), 1);
                 self.sp = self.get_register_pair(RegisterPair::HL);
             }
             Opcode::Push(source) => {
+                self.trace(format!("push {source:?}"), 1);
                 let source = self.get_register_pair(source);
                 self.push_stack(bus, source);
             }
             Opcode::Pop(target) => {
+                self.trace(format!("pop {target:?}"), 1);
                 let val = self.pop_stack(bus);
                 self.set_register_pair(target, val);
             }
             Opcode::AluR(alu_op, source) => {
+                self.trace(format!("{alu_op:?} a,{source:?}"), 1);
                 let val = self.get_register(source);
                 self.run_alu(alu_op, val);
             }
             Opcode::AluImm(alu_op) => {
                 let val = self.read_immediate(bus);
+                self.trace(format!("{alu_op:?} a,{val}"), 2);
                 self.run_alu(alu_op, val);
             }
             Opcode::AluMem(alu_op) => {
+                self.trace(format!("{alu_op:?} a,[hl]"), 1);
                 let val = bus.read(self.get_register_pair(RegisterPair::HL));
                 self.run_alu(alu_op, val);
             }
             Opcode::IncR(source) => {
+                self.trace(format!("inc {source:?}"), 1);
                 let val = self.get_register(source);
                 let result = val.wrapping_add(1);
 
@@ -202,6 +333,7 @@ impl Cpu {
                 self.set_register(source, result);
             }
             Opcode::IncMem => {
+                self.trace(format!("inc [hl]"), 1);
                 let addr = self.get_register_pair(RegisterPair::HL);
                 let val = bus.read(addr);
                 let result = val.wrapping_add(1);
@@ -212,6 +344,7 @@ impl Cpu {
                 bus.write(addr, result);
             }
             Opcode::DecR(source) => {
+                self.trace(format!("dec {source:?}"), 1);
                 let val = self.get_register(source);
                 let result = val.wrapping_sub(1);
 
@@ -221,6 +354,7 @@ impl Cpu {
                 self.set_register(source, result);
             }
             Opcode::DecMem => {
+                self.trace(format!("dec [hl]"), 1);
                 let addr = self.get_register_pair(RegisterPair::HL);
                 let val = bus.read(addr);
                 let result = val.wrapping_sub(1);
@@ -231,6 +365,7 @@ impl Cpu {
                 bus.write(addr, result);
             }
             Opcode::Daa => {
+                self.trace(format!("daa"), 1);
                 let mut adjustment = if self.f.contains(FlagRegister::C) {
                     0x60
                 } else {
@@ -260,15 +395,17 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, self.a == 0);
             }
             Opcode::Cpl => {
+                self.trace(format!("cpl"), 1);
                 self.a = self.a ^ 0xFF;
                 self.f.set(FlagRegister::H, true);
                 self.f.set(FlagRegister::N, true);
             }
             Opcode::Add16HL(source) => {
+                self.trace(format!("add hl,{source:?}"), 1);
                 let val = self.get_register_pair(RegisterPair::HL);
                 let source = self.get_register_pair(source);
                 let (result, carry) = val.overflowing_add(source);
-                let half_carry = (val & 0x07FF) + (source & 0x07FF) > 0x07FF;
+                let half_carry = (val & 0x0FFF) + (source & 0x0FFF) > 0x0FFF;
 
                 self.set_register_pair(RegisterPair::HL, result);
                 self.f.set(FlagRegister::C, carry);
@@ -277,7 +414,8 @@ impl Cpu {
             }
             Opcode::Add16SPSigned => {
                 // Reinterpret the immediate as signed, then convert to unsigned u16 equivalent
-                let immediate = self.read_immediate(bus) as i8 as i16 as u16;
+                let immediate = self.read_immediate(bus) as i8 as u16;
+                self.trace(format!("add sp,{:+}", immediate as i8), 2);
                 let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
                 let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
 
@@ -288,14 +426,17 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, false);
             }
             Opcode::Inc16R(source) => {
+                self.trace(format!("inc {source:?}"), 1);
                 self.set_register_pair(source, self.get_register_pair(source).wrapping_add(1));
             }
             Opcode::Dec16R(source) => {
+                self.trace(format!("dec {source:?}"), 1);
                 self.set_register_pair(source, self.get_register_pair(source).wrapping_sub(1));
             }
             Opcode::Ld16HLSPSigned => {
                 // Two's complement conversion
                 let immediate = self.read_immediate(bus) as i8 as u16;
+                self.trace(format!("ld hl,sp+{}", immediate as i8), 2);
                 let carry = (self.sp & 0x00FF) + (immediate & 0x00FF) > 0x00FF;
                 let half_carry = (self.sp & 0x000F) + (immediate & 0x000F) > 0x000F;
 
@@ -306,45 +447,54 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, false);
             }
             Opcode::RlcA => {
+                self.trace(format!("rlca"), 1);
                 let val = self.get_register(Register::A);
                 let result = self.run_rot(Rot::Rlc, val, true);
                 self.set_register(Register::A, result);
             }
             Opcode::RlA => {
+                self.trace(format!("rla"), 1);
                 let val = self.get_register(Register::A);
                 let result = self.run_rot(Rot::Rl, val, true);
                 self.set_register(Register::A, result);
             }
             Opcode::RrcA => {
+                self.trace(format!("rrca"), 1);
                 let val = self.get_register(Register::A);
                 let result = self.run_rot(Rot::Rrc, val, true);
                 self.set_register(Register::A, result);
             }
             Opcode::RrA => {
+                self.trace(format!("rra"), 1);
                 let val = self.get_register(Register::A);
                 let result = self.run_rot(Rot::Rr, val, true);
                 self.set_register(Register::A, result);
             }
             Opcode::JpImm => {
                 let addr = self.read_immediate16(bus);
+                self.trace(format!("jp ${addr:04x}"), 3);
                 self.pc = addr;
             }
             Opcode::JpHL => {
+                self.trace(format!("jp hl"), 1);
                 self.pc = self.get_register_pair(RegisterPair::HL);
             }
             Opcode::JpCond(condition) => {
                 let addr = self.read_immediate16(bus);
+                self.trace(format!("jp {condition:?},${addr:04x}"), 3);
                 if self.check_conditional(condition) {
                     self.cycles += 1;
-                    self.pc = addr
+                    self.pc = addr;
                 }
             }
             Opcode::JpRel => {
                 let offset = self.read_immediate(bus) as i8;
-                self.pc = self.pc.wrapping_add(offset as u16)
+                self.trace(format!("jr {offset:+}"), 2);
+                self.pc = self.pc.wrapping_add(offset as u16);
             }
             Opcode::JpRelCond(condition) => {
                 let offset = self.read_immediate(bus) as i8;
+                self.trace(format!("jr {condition:?},{offset:+}"), 2);
                 if self.check_conditional(condition) {
                     self.cycles += 1;
                     self.pc = self.pc.wrapping_add(offset as u16)
@@ -352,11 +502,13 @@ impl Cpu {
             }
             Opcode::Call => {
                 let addr = self.read_immediate16(bus);
+                self.trace(format!("call ${addr:04x}"), 3);
                 self.push_stack(bus, self.pc);
                 self.pc = addr;
             }
             Opcode::CallCond(condition) => {
                 let addr = self.read_immediate16(bus);
+                self.trace(format!("call {condition:?},${addr:04x}"), 3);
                 if self.check_conditional(condition) {
                     self.cycles += 3;
                     self.push_stack(bus, self.pc);
@@ -364,10 +516,12 @@ impl Cpu {
                 }
             }
             Opcode::Ret => {
+                self.trace(format!("ret"), 1);
                 let addr = self.pop_stack(bus);
                 self.pc = addr;
             }
             Opcode::RetCond(condition) => {
+                self.trace(format!("ret {condition:?}"), 1);
                 if self.check_conditional(condition) {
                     self.cycles += 3;
                     let addr = self.pop_stack(bus);
@@ -375,36 +529,48 @@ impl Cpu {
                 }
             }
             Opcode::Reti => {
+                self.trace(format!("reti"), 1);
                 let addr = self.pop_stack(bus);
                 self.pc = addr;
-                self.interrupt_master_enable = true;
+
+                // IME enable is NOT delayed to the next instruction.
+                self.ime_pending = Some(false);
             }
             Opcode::Rst(addr) => {
+                self.trace(format!("rst ${addr:02x}"), 1);
                 self.push_stack(bus, self.pc);
                 self.pc = addr as u16;
             }
             Opcode::Ccf => {
+                self.trace(format!("ccf"), 1);
                 self.f
                     .set(FlagRegister::C, !self.f.contains(FlagRegister::C));
                 self.f.remove(FlagRegister::N);
                 self.f.remove(FlagRegister::H);
             }
             Opcode::Scf => {
+                self.trace(format!("scf"), 1);
                 self.f.insert(FlagRegister::C);
                 self.f.remove(FlagRegister::N);
                 self.f.remove(FlagRegister::H);
             }
             Opcode::Halt => {
-                // TODO: Implement halt
+                self.trace(format!("halt"), 1);
+                self.halted = true;
             }
             Opcode::Stop => {
-                // TODO: Implement stop
+                // TODO: Completely implement stop (sleep portion...?)
+                self.trace(format!("stop"), 1);
+                bus.toggle_double_speed();
             }
             Opcode::Di => {
+                self.trace(format!("di"), 1);
                 self.interrupt_master_enable = false;
             }
             Opcode::Ei => {
-                self.interrupt_master_enable = true;
+                // IME enable is delayed to the next instruction.
+                self.trace(format!("ei"), 1);
+                self.ime_pending = Some(true);
             }
         }
     }
@@ -443,16 +609,19 @@ impl Cpu {
 
         match op {
             OpcodeCB::RotateR(rot_op, source) => {
+                self.trace(format!("{rot_op:?} {source:?}"), 2);
                 let val = self.get_register(source);
                 let result = self.run_rot(rot_op, val, false);
                 self.set_register(source, result);
             }
             OpcodeCB::RotateMem(rot_op) => {
+                self.trace(format!("{rot_op:?} [hl]"), 2);
                 let val = bus.read(self.get_register_pair(RegisterPair::HL));
                 let result = self.run_rot(rot_op, val, false);
                 bus.write(self.get_register_pair(RegisterPair::HL), result);
             }
             OpcodeCB::BitR(index, source) => {
+                self.trace(format!("bit {index},{source:?}"), 2);
                 let val = self.get_register(source);
                 let mask = 1u8 << index;
 
@@ -461,6 +630,7 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, (val & mask) == 0);
             }
             OpcodeCB::BitMem(index) => {
+                self.trace(format!("bit {index},[hl]"), 2);
                 let val = bus.read(self.get_register_pair(RegisterPair::HL));
                 let mask = 1u8 << index;
 
@@ -469,21 +639,25 @@ impl Cpu {
                 self.f.set(FlagRegister::Z, (val & mask) == 0);
             }
             OpcodeCB::ResR(index, source) => {
+                self.trace(format!("res {index},{source:?}"), 2);
                 let val = self.get_register(source);
                 let mask = !(1u8 << index);
                 self.set_register(source, val & mask);
             }
             OpcodeCB::ResMem(index) => {
+                self.trace(format!("res {index},[hl]"), 2);
                 let val = bus.read(self.get_register_pair(RegisterPair::HL));
                 let mask = !(1u8 << index);
                 bus.write(self.get_register_pair(RegisterPair::HL), val & mask);
             }
             OpcodeCB::SetR(index, source) => {
+                self.trace(format!("set {index},{source:?}"), 2);
                 let val = self.get_register(source);
                 let mask = 1u8 << index;
                 self.set_register(source, val | mask);
             }
             OpcodeCB::SetMem(index) => {
+                self.trace(format!("set {index},[hl]"), 2);
                 let val = bus.read(self.get_register_pair(RegisterPair::HL));
                 let mask = 1u8 << index;
                 bus.write(self.get_register_pair(RegisterPair::HL), val | mask);
@@ -741,6 +915,7 @@ impl Cpu {
 mod tests {
     use super::*;
     use crate::Cartridge;
+    use crate::CgbDoubleSpeed;
     use crate::InterruptState;
     use crate::JoypadState;
     use crate::OamDma;
@@ -755,6 +930,7 @@ mod tests {
         pub wram: [u8; WRAM_BANK_SIZE as usize * 8],
         pub hram: [u8; 0x7F],
         pub interrupts: InterruptState,
+        pub double_speed: CgbDoubleSpeed,
         pub oam_dma: OamDma,
         pub joypad_state: JoypadState,
         pub joypad_register: u8,
@@ -774,6 +950,7 @@ mod tests {
                 wram: [0u8; WRAM_BANK_SIZE as usize * 8],
                 hram: [0u8; 0x7F],
                 interrupts: Default::default(),
+                double_speed: Default::default(),
                 oam_dma: Default::default(),
                 joypad_state: Default::default(),
                 joypad_register: 0,
