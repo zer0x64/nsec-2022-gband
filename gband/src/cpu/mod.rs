@@ -4,15 +4,7 @@ use bitflags::bitflags;
 
 use crate::{bus::CpuBus, OamDma};
 use decoder::{
-    Alu,
-    Condition,
-    Opcode,
-    OpcodeCB,
-    OpMemAddress8,
-    OpMemAddress16,
-    Register,
-    RegisterPair,
-    Rot
+    Alu, Condition, OpMemAddress16, OpMemAddress8, Opcode, OpcodeCB, Register, RegisterPair, Rot,
 };
 
 bitflags! {
@@ -625,9 +617,7 @@ impl Cpu {
                 let result = (val >> 1) | (val & 0x80);
                 (result, carry)
             }
-            Rot::Swap => {
-                (val.swap_bytes(), false)
-            }
+            Rot::Swap => (val.swap_bytes(), false),
             Rot::Srl => {
                 let carry = val & 0x01 == 0x01;
                 let result = val >> 1;

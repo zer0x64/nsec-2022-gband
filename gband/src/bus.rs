@@ -1,8 +1,8 @@
 use crate::oam_dma::OamDma;
 use crate::Cartridge;
+use crate::Cpu;
 use crate::InterruptReg;
 use crate::InterruptState;
-use crate::Cpu;
 use crate::JoypadState;
 use crate::Ppu;
 use crate::WRAM_BANK_SIZE;
@@ -59,7 +59,7 @@ impl<'a> CpuBus<'a> {
             ppu,
             joypad_state,
             joypad_register,
-            serial_port_buffer
+            serial_port_buffer,
         }
     }
 }
@@ -122,25 +122,27 @@ impl CpuBus<'_> {
             0xFF00 => {
                 // Joypad
                 self.write_joypad_reg(data)
-            },
+            }
             0xFF01 => {
                 // Serial transfer data (SB)
                 if data == 10u8 {
                     if !self.serial_port_buffer.is_empty() {
-                        log::info!("Serial port: {}", self.serial_port_buffer
-                            .iter()
-                            .flat_map(|c| (*c as char).escape_default())
-                            .collect::<alloc::string::String>()
+                        log::info!(
+                            "Serial port: {}",
+                            self.serial_port_buffer
+                                .iter()
+                                .flat_map(|c| (*c as char).escape_default())
+                                .collect::<alloc::string::String>()
                         );
                         self.serial_port_buffer.clear();
                     }
                 } else {
                     self.serial_port_buffer.push(data);
                 }
-            },
+            }
             0xFF02 => {
                 // Serial transfer control (SC)
-            },
+            }
             0xFF46 => {
                 // OAM DMA
                 self.request_oam_dma(data)
@@ -148,16 +150,10 @@ impl CpuBus<'_> {
             0xFF40..=0xFF45 | 0xFF47..=0xFF6F => {
                 // PPU control reg
                 self.ppu.write(addr, data)
-            },
-            0xFF0F => {
-                self.interrupts.status = InterruptReg::from_bits_truncate(data)
-            },
-            0xFF80..=0xFFFE => {
-                self.hram[(addr & 0x7E) as usize] = data
-            },
-            0xFFFF => {
-                self.interrupts.enable = InterruptReg::from_bits_truncate(data)
-            },
+            }
+            0xFF0F => self.interrupts.status = InterruptReg::from_bits_truncate(data),
+            0xFF80..=0xFFFE => self.hram[(addr & 0x7E) as usize] = data,
+            0xFFFF => self.interrupts.enable = InterruptReg::from_bits_truncate(data),
             _ => {
                 // TODO: handle full memory map
             }
@@ -189,10 +185,8 @@ impl CpuBus<'_> {
             0xFF00 => {
                 // Joypad
                 self.read_joypad_reg()
-            },
-            0xFF0F => {
-                self.interrupts.status.bits()
-            },
+            }
+            0xFF0F => self.interrupts.status.bits(),
             0xFF46 => {
                 // OAM DMA
                 self.read_oam_dma()
@@ -200,13 +194,9 @@ impl CpuBus<'_> {
             0xFF40..=0xFF45 | 0xFF47..=0xFF6F => {
                 // PPU control reg
                 self.ppu.read(addr)
-            },
-            0xFF80..=0xFFFE => {
-                self.hram[(addr & 0x7E) as usize]
-            },
-            0xFFFF => {
-                self.interrupts.enable.bits()
-            },
+            }
+            0xFF80..=0xFFFE => self.hram[(addr & 0x7E) as usize],
+            0xFFFF => self.interrupts.enable.bits(),
             _ => {
                 // TODO: handle full memory map
                 0

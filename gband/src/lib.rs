@@ -8,15 +8,15 @@ pub mod bus; // TODO: Revert pub added for criterion
 mod cartridge;
 mod cpu;
 mod interrupt;
-mod oam_dma;
 mod joypad_state;
+mod oam_dma;
 mod ppu;
 mod rgb_palette;
 pub mod utils;
 
 pub use cartridge::RomParserError;
 pub use cpu::Cpu;
-pub use interrupt::{ InterruptState, InterruptReg };
+pub use interrupt::{InterruptReg, InterruptState};
 pub use joypad_state::JoypadState;
 pub use ppu::{Frame, Ppu, FRAME_HEIGHT, FRAME_WIDTH};
 

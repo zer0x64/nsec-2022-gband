@@ -554,58 +554,88 @@ pub enum OpcodeCB {
 impl From<u8> for OpcodeCB {
     fn from(op: u8) -> Self {
         match op {
-            0x00..=0x05 | 0x07..=0x0D | 0x0F..=0x15 |
-            0x17..=0x1D | 0x1F..=0x25 | 0x27..=0x2D |
-            0x2F..=0x35 | 0x37..=0x3D | 0x3F => {
+            0x00..=0x05
+            | 0x07..=0x0D
+            | 0x0F..=0x15
+            | 0x17..=0x1D
+            | 0x1F..=0x25
+            | 0x27..=0x2D
+            | 0x2F..=0x35
+            | 0x37..=0x3D
+            | 0x3F => {
                 // Encoding: 00,yyy,zzz y: rot op z: source reg8
-                let rot_op = Rot::try_from((op & 0o070) >> 3).expect("Rot r: Unexpected rot operation");
-                let source = Register::try_from(op & 0o007).expect("Rot r: Unexpected source register");
+                let rot_op =
+                    Rot::try_from((op & 0o070) >> 3).expect("Rot r: Unexpected rot operation");
+                let source =
+                    Register::try_from(op & 0o007).expect("Rot r: Unexpected source register");
                 Self::RotateR(rot_op, source)
-            },
+            }
             0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => {
                 // Encoding: 00,yyy,110 y: rot op
-                let rot_op = Rot::try_from((op & 0o070) >> 3).expect("Rot (HL): Unexpected rot operation");
+                let rot_op =
+                    Rot::try_from((op & 0o070) >> 3).expect("Rot (HL): Unexpected rot operation");
                 Self::RotateMem(rot_op)
-            },
-            0x40..=0x45 | 0x47..=0x4D | 0x4F..=0x55 |
-            0x57..=0x5D | 0x5F..=0x65 | 0x67..=0x6D |
-            0x6F..=0x75 | 0x77..=0x7D | 0x7F => {
+            }
+            0x40..=0x45
+            | 0x47..=0x4D
+            | 0x4F..=0x55
+            | 0x57..=0x5D
+            | 0x5F..=0x65
+            | 0x67..=0x6D
+            | 0x6F..=0x75
+            | 0x77..=0x7D
+            | 0x7F => {
                 // Encoding: 01,yyy,zzz y: bit index z: source reg8
                 let index = (op & 0o070) >> 3;
-                let source = Register::try_from(op & 0o007).expect("BIT n, r: Unexpected source register");
+                let source =
+                    Register::try_from(op & 0o007).expect("BIT n, r: Unexpected source register");
                 Self::BitR(index, source)
-            },
+            }
             0x46 | 0x4E | 0x56 | 0x5E | 0x66 | 0x6E | 0x76 | 0x7E => {
                 // Encoding: 01,yyy,110 y: bit index
                 let index = (op & 0o070) >> 3;
                 Self::BitMem(index)
-            },
-            0x80..=0x85 | 0x87..=0x8D | 0x8F..=0x95 |
-            0x97..=0x9D | 0x9F..=0xA5 | 0xA7..=0xAD |
-            0xAF..=0xB5 | 0xB7..=0xBD | 0xBF => {
+            }
+            0x80..=0x85
+            | 0x87..=0x8D
+            | 0x8F..=0x95
+            | 0x97..=0x9D
+            | 0x9F..=0xA5
+            | 0xA7..=0xAD
+            | 0xAF..=0xB5
+            | 0xB7..=0xBD
+            | 0xBF => {
                 // Encoding: 10,yyy,zzz y: bit index z: source reg8
                 let index = (op & 0o070) >> 3;
-                let source = Register::try_from(op & 0o007).expect("RES n, r: Unexpected source register");
+                let source =
+                    Register::try_from(op & 0o007).expect("RES n, r: Unexpected source register");
                 Self::ResR(index, source)
-            },
+            }
             0x86 | 0x8E | 0x96 | 0x9E | 0xA6 | 0xAE | 0xB6 | 0xBE => {
                 // Encoding: 10,yyy,110 y: bit index
                 let index = (op & 0o070) >> 3;
                 Self::ResMem(index)
-            },
-            0xC0..=0xC5 | 0xC7..=0xCD | 0xCF..=0xD5 |
-            0xD7..=0xDD | 0xDF..=0xE5 | 0xE7..=0xED |
-            0xEF..=0xF5 | 0xF7..=0xFD | 0xFF => {
+            }
+            0xC0..=0xC5
+            | 0xC7..=0xCD
+            | 0xCF..=0xD5
+            | 0xD7..=0xDD
+            | 0xDF..=0xE5
+            | 0xE7..=0xED
+            | 0xEF..=0xF5
+            | 0xF7..=0xFD
+            | 0xFF => {
                 // Encoding: 11,yyy,zzz y: bit index z: source reg8
                 let index = (op & 0o070) >> 3;
-                let source = Register::try_from(op & 0o007).expect("SET n, r: Unexpected source register");
+                let source =
+                    Register::try_from(op & 0o007).expect("SET n, r: Unexpected source register");
                 Self::SetR(index, source)
-            },
+            }
             0xC6 | 0xCE | 0xD6 | 0xDE | 0xE6 | 0xEE | 0xF6 | 0xFE => {
                 // Encoding: 11,yyy,110 y: bit index
                 let index = (op & 0o070) >> 3;
                 Self::SetMem(index)
-            },
+            }
         }
     }
 }
