@@ -161,7 +161,7 @@ impl CpuBus<'_> {
                 // KEY1
                 self.double_speed.set(CgbDoubleSpeed::PENDING, data != 0)
             }
-            0xFF80..=0xFFFE => self.hram[(addr & 0x7E) as usize] = data,
+            0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = data,
             0xFFFF => self.interrupts.enable = InterruptReg::from_bits_truncate(data),
             _ => {
                 // TODO: handle full memory map
@@ -216,7 +216,7 @@ impl CpuBus<'_> {
                 // KEY1
                 self.double_speed.bits()
             }
-            0xFF80..=0xFFFE => self.hram[(addr & 0x7E) as usize],
+            0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
             0xFFFF => self.interrupts.enable.bits(),
             _ => {
                 // TODO: handle full memory map
