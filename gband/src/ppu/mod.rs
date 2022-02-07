@@ -332,6 +332,48 @@ impl Ppu {
 
         status_reg.bits()
     }
+
+    // FIXME: temporary naming for these functions (there are 16 bytes to read to actual find pixel
+    // color… refer to wiki anyway)
+
+    fn read_bg_win_tile(&self, id: u8) -> u8 {
+        // See: https://gbdev.io/pandocs/Tile_Data.html
+        if self
+            .lcd_control_reg
+            .contains(LcdControl::BACKGROUND_WINDOW_TILE_DATA_AREA)
+        {
+            self.read_obj_tile(id)
+        } else {
+            let id = id as i8;
+            let base_addr = 0x9000;
+            let addr_to_read = if let Ok(offset) = u16::try_from(id) {
+                base_addr + offset * 16
+            } else {
+                base_addr - u16::try_from(-id).unwrap() * 16
+            };
+            self.read_vram(addr_to_read)
+        }
+    }
+
+    fn read_obj_tile(&self, id: u8) -> u8 {
+        let base_addr = 0x8000;
+        let addr_to_read = base_addr + u16::from(id) * 16;
+        self.read_vram(addr_to_read)
+    }
+
+    fn read_tile_index(&self, id: u16) -> u8 {
+        // See: https://gbdev.io/pandocs/Tile_Maps.html
+        if self
+            .lcd_control_reg
+            .contains(LcdControl::BACKGROUND_TILE_MAP_AREA)
+        {
+            let addr = 0x9C00 + id;
+            self.read_vram(addr)
+        } else {
+            let addr = 0x9800 + id;
+            self.read_vram(addr)
+        }
+    }
 }
 
 fn allocate_new_frame() -> Frame {
