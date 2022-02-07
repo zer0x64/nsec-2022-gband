@@ -332,10 +332,6 @@ impl Ppu {
 
         status_reg.bits()
     }
-
-
-        }
-    }
 }
 
 fn allocate_new_frame() -> Frame {
