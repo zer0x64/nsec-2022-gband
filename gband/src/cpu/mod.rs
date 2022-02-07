@@ -791,7 +791,7 @@ impl Cpu {
                 let result = (val >> 1) | (val & 0x80);
                 (result, carry)
             }
-            Rot::Swap => (val.swap_bytes(), false),
+            Rot::Swap => (((val & 0x0f) << 4) | ((val & 0xf0) >> 4), false),
             Rot::Srl => {
                 let carry = val & 0x01 == 0x01;
                 let result = val >> 1;
