@@ -94,7 +94,8 @@ impl Emulator {
 
         // We clock CPU on M-cycles, at ~1MHz on regular mode and ~2MHz on CGB double speed mode
         // This means we clock it every 2 or 4 cycles
-        if (self.clock_count == 2 && self.double_speed.contains(CgbDoubleSpeed::ENABLED)) || self.clock_count == 4 {
+        let double_speed = self.double_speed.contains(CgbDoubleSpeed::ENABLED);
+        if (double_speed && self.clock_count == 2) || self.clock_count == 4 {
             let mut cpu_bus = borrow_cpu_bus!(self);
             self.cpu.clock(&mut cpu_bus);
 

@@ -35,6 +35,7 @@ pub struct Cpu {
     pub interrupt_master_enable: bool,
     pub ime_pending: Option<bool>,
     pub halted: bool,
+    pub halt_bug_active: bool,
 }
 
 impl Default for Cpu {
@@ -58,6 +59,7 @@ impl Default for Cpu {
             interrupt_master_enable: false,
             ime_pending: None,
             halted: false,
+            halt_bug_active: false,
         }
     }
 }
@@ -118,10 +120,8 @@ impl Cpu {
                 // The ISR takes 5 cycles
                 self.cycles = 5;
             } else {
-                // Halt bug: pc is not incremented properly
-                // TODO: Check if this is actually right...? Does this fetch twice, or fetch and not increase pc...?
-                // TODO: If it's fetch and not increase pc, this will need to be a flag to check during fetch
-                self.cycles += 1;
+                // Halt bug: pc is not incremented properly once
+                self.halt_bug_active = true;
             }
         }
     }
@@ -165,6 +165,12 @@ impl Cpu {
     pub fn fetch(&mut self, bus: &mut CpuBus) {
         self.opcode_latch = Opcode::from(self.read_immediate(bus));
         self.cycles = self.opcode_latch.cycles();
+
+        if self.halt_bug_active {
+            // Revert pc increment here, instead of running this on every read_immediate
+            self.pc = self.pc.wrapping_sub(1);
+            self.halt_bug_active = false;
+        }
     }
 
     // TODO: Remove pub added for criterion
