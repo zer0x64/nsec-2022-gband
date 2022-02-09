@@ -100,7 +100,7 @@ impl Cpu {
         let interrupts_enable = bus.read(0xFFFF);
 
         // Get the highest priority interrupt requested, bit 0 is higher priority
-        let pending = interrupts_enable & interrupts_status;
+        let pending = interrupts_enable & interrupts_status & 0x1F;
         let pending_index = pending.trailing_zeros() as u16;
 
         if pending != 0 {
@@ -118,9 +118,6 @@ impl Cpu {
 
                 // The ISR takes 5 cycles
                 self.cycles = 5;
-            } else {
-                // Halt bug: pc is not incremented properly once
-                self.halt_bug_active = true;
             }
         }
     }
@@ -452,7 +449,16 @@ impl Cpu {
                 self.f.remove(FlagRegister::H);
             }
             Opcode::Halt => {
-                self.halted = true;
+                let interrupts_status = bus.read(0xFF0F);
+                let interrupts_enable = bus.read(0xFFFF);
+                let pending = interrupts_enable & interrupts_status & 0x1F;
+
+                // If there is already an interrupt pending AND IME is false, skip halt completely
+                if !self.interrupt_master_enable && pending != 0 {
+                    self.halt_bug_active = true;
+                } else {
+                    self.halted = true;
+                }
             }
             Opcode::Stop => {
                 // TODO: Completely implement stop (sleep portion...?)

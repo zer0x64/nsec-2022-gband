@@ -1,7 +1,6 @@
 use crate::oam_dma::OamDma;
 use crate::Cartridge;
 use crate::CgbDoubleSpeed;
-use crate::Cpu;
 use crate::InterruptReg;
 use crate::InterruptState;
 use crate::JoypadState;
@@ -148,7 +147,7 @@ impl CpuBus<'_> {
             0xFF02 => {
                 // Serial transfer control (SC)
             }
-            0xFF0F => self.interrupts.status = InterruptReg::from_bits_truncate(data),
+            0xFF0F => self.interrupts.status = InterruptReg::from_bits_truncate(0xE0 | data),
             0xFF46 => {
                 // OAM DMA
                 self.request_oam_dma(data)
@@ -159,7 +158,7 @@ impl CpuBus<'_> {
             }
             0xFF4D => {
                 // KEY1
-                self.double_speed.set(CgbDoubleSpeed::PENDING, data != 0)
+                self.double_speed.set(CgbDoubleSpeed::PENDING, (data & 1) != 0)
             }
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = data,
             0xFFFF => self.interrupts.enable = InterruptReg::from_bits_truncate(data),
