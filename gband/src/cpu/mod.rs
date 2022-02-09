@@ -42,13 +42,13 @@ impl Default for Cpu {
         Self {
             // Values after CGB Boot ROM
             b: 0,
-            c: 0x13,
-            d: 0x00,
-            e: 0xD8,
-            h: 0x01,
-            l: 0x4D,
+            c: 0,
+            d: 0xFF,
+            e: 0x56,
+            h: 0,
+            l: 0x0D,
             a: 0x11,
-            f: FlagRegister::Z | FlagRegister::H | FlagRegister::C,
+            f: FlagRegister::Z,
 
             sp: 0xFFFE,
             pc: 0x0100,
