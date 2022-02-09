@@ -431,7 +431,7 @@ impl Cpu {
                 self.pc = addr;
 
                 // IME enable is NOT delayed to the next instruction.
-                self.ime_pending = Some(false);
+                self.interrupt_master_enable = true;
             }
             Opcode::Rst(addr) => {
                 self.push_stack(bus, self.pc);
