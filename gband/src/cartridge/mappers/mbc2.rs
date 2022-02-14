@@ -67,7 +67,7 @@ impl Mapper for Mbc2 {
         match addr {
             0x0000..=0x3FFF => {
                 // RAM enabling and ROM bank selection
-                let rom_select = addr & 0x10 == 1;
+                let rom_select = addr & 0x100 == 0x100;
 
                 if rom_select {
                     // Selecting ROM bank number
@@ -83,7 +83,7 @@ impl Mapper for Mbc2 {
 
                 } else {
                     // Enabling or disabling RAM
-                    self.ram_enable = data & 0xF == 0x0A;
+                    self.ram_enable = data == 0x0A;
                     None
                 }
             }
