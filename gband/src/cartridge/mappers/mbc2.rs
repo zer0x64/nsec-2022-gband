@@ -3,15 +3,13 @@ use crate::cartridge::CartridgeReadTarget;
 
 pub struct Mbc2 {
     bank_mask: usize,
-    n_rom_banks: usize,
     ram_enable: bool,
     rom_bank_number: u8,
 }
 
 impl Mbc2 {
-    pub fn new(n_rom_banks: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            n_rom_banks,
             ..Default::default()
         }
     }
@@ -21,7 +19,6 @@ impl Default for Mbc2 {
     fn default() -> Self {
         Self {
             bank_mask: 0xF,
-            n_rom_banks: 0,
             ram_enable: false,
             rom_bank_number: 0x01,
         }
