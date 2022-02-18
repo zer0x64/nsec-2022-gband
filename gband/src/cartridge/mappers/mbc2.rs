@@ -39,7 +39,7 @@ impl Mapper for Mbc2 {
                 // Maximum of 16 banks supported
                 let mask = 0x3FFF;
                 let addr = (addr & mask) as usize;
-                let mut bank = (self.rom_bank_number as usize) << 14usize;
+                let bank = (self.rom_bank_number as usize) << 14usize;
 
                 CartridgeReadTarget::Rom(bank | addr)
             }
@@ -48,7 +48,7 @@ impl Mapper for Mbc2 {
                 // 0xA200-0xBFFF -> Repeat of 0xA000-0xA1FF
                 if self.ram_enable {
                     let mask = 0x1FF;
-                    CartridgeReadTarget::Ram((addr & mask) as usize)
+                    CartridgeReadTarget::RamHalf((addr & mask) as usize)
                 } else {
                     CartridgeReadTarget::Error
                 }
