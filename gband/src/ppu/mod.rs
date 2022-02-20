@@ -333,6 +333,37 @@ impl Ppu {
         status_reg.bits()
     }
 
+    fn render(&self) {
+        if self
+            .lcd_control_reg
+            .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
+        {
+            // NOTE: assuming non-GBC mode only for now
+
+            // Scroll using SCX and SCY registers
+            let bg_x = (self.x + u16::from(self.scroll_x)) as u8; // FIXME: check if `self.x` should not rather be a `u8`
+            let bg_y = self.y + self.scroll_y;
+
+            // TODO: write background
+
+            if self.lcd_control_reg.contains(LcdControl::WINDOW_ENABLE) {
+                // Position window using WX and WY registers
+                let win_x = (self.x + u16::from(self.window_x)) as u8; // FIXME: check if `self.x` should not rather be a `u8`
+                let win_y = self.y + self.window_y;
+
+                // "Window visibility"
+                // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
+
+                // Window internal line counter
+                // > The window keeps an internal line counter that’s functionally similar to LY, and increments alongside it. However, it only gets incremented when the window is visible, as described here.
+                // https://gbdev.io/pandocs/Tile_Maps.html#window
+                // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
+
+                // TODO: write window
+            }
+        }
+    }
+
     // FIXME: temporary naming for these functions (there are 16 bytes to read to actual find pixel
     // color… refer to wiki anyway)
 
