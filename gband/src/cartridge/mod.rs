@@ -14,6 +14,7 @@ pub enum CartridgeReadTarget {
     Rom(usize),
     Ram(usize),
     RamHalf(usize),
+    RegisterValue(u8),
 }
 
 pub struct Cartridge {
@@ -77,6 +78,9 @@ impl Cartridge {
             CartridgeType::Mbc5 | CartridgeType::Mbc5Ram | CartridgeType::Mbc5RamBattery | CartridgeType::Mbc5Rumble | CartridgeType::Mbc5RumbleRam | CartridgeType::Mbc5RumbleRamBattery => {
                 Box::new(Mbc5::new())
             }
+            CartridgeType::Mbc3TimerBattery | CartridgeType::Mbc3TimerRamBattery | CartridgeType::Mbc3 | CartridgeType::Mbc3Ram | CartridgeType::Mbc3RamBattery => {
+                Box::new(Mbc3::new())
+            }
             _ => return Err(RomParserError::MapperNotImplemented),
         };
 
@@ -110,6 +114,7 @@ impl Cartridge {
                     0
                 }
             },
+            CartridgeReadTarget::RegisterValue(value) => value,
         }
     }
 
