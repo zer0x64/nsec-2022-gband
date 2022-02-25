@@ -38,7 +38,7 @@ impl Mapper for Mbc3 {
                 // Switchable bank
                 let mask = 0x3FFF;
                 let addr = (addr & mask) as usize;
-                let mut bank = (self.rom_bank_number as usize) << 14usize;
+                let bank = (self.rom_bank_number as usize) << 14usize;
 
                 CartridgeReadTarget::Rom(bank | addr)
             }

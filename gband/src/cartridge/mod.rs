@@ -14,7 +14,6 @@ pub enum CartridgeReadTarget {
     Rom(usize),
     Ram(usize),
     RamHalf(usize),
-    RegisterValue(u8),
 }
 
 pub struct Cartridge {
