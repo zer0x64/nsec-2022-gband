@@ -84,7 +84,8 @@ impl Mapper for Mbc3 {
                 // data 0x00-0x03 sets RAM bank
                 // data 0x08-0x0C sets RTC register
 
-                self.ram_or_rtc_bank_number = data;
+                // Temporary mask while RTC isn't implemented
+                self.ram_or_rtc_bank_number = data & 0x03;
                 None
             }
             0x6000..=0x7FFF => {
