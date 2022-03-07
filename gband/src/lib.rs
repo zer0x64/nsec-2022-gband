@@ -66,6 +66,10 @@ impl Emulator {
         let cartridge = Cartridge::load(rom, save_data)?;
         let cgb_mode = cartridge.is_cgb();
 
+        // TODO: Socket PoC stuff, remove later
+        let mut serial_port = SerialPort::default();
+        serial_port.enable_socket();
+
         let emulator = Self {
             cartridge,
             cpu: Default::default(),
@@ -80,7 +84,7 @@ impl Emulator {
             ppu: Ppu::new(),
             cgb_mode,
 
-            serial_port: Default::default(),
+            serial_port,
 
             joypad_state: Default::default(),
             joypad_register: Default::default(),
