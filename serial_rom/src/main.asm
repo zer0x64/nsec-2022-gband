@@ -1,13 +1,25 @@
+; ------------------------------
+; This simple test rom will send a counter through
+; the serial port
+;
+; One machine will be initiated as P1 and
+; the other as P2 using Start and Select
+;
+; P1 will have an even counter, and P2
+; an odd counter
+;
+; The 2 players send each other their counter
+; increment, and send back the counter they received
+; ------------------------------
 include "hardware.inc"
-include "sio.inc"
 
 ; ------------------------------
 ; RAM variables
 ; ------------------------------
 def PAD equ _RAM ; Current state of the joypad
-;def SIOTYPE equ _RAM+1 ; Running as MASTER or SLAVE?
-;def TD equ _RAM+2
-;def RD equ _RAM+3
+def LOCAL_COUNTER equ _RAM+1 ; Local player counter
+def RECEIVED_COUNTER equ _RAM+2 ; Received counter for debugging
+def COMPARE_RESULT equ _RAM+3 ; Comparison result, if zero then it's equal
 
 ; ------------------------------
 ; Main executable code
@@ -22,48 +34,92 @@ main:
 	di
 	ld sp, $ffff
 
-	;ld hl, SIOTYPE
+	ld hl, rSB
 
 .wait_input:
 	call read_joypad
 
 	ld a, [PAD]	
 	and PADF_START
-	jr nz, .master
+	jr nz, .p1
 
 	ld a, [PAD]
 	and PADF_SELECT
-	jr nz, .slave
+	jr nz, .p2
 
 	call delay
 	jr .wait_input
 
-.master:
-	;ld [hl], MASTER_MODE
-	call init_sio_master
+.p1:
+	; Init the counter
+	ld a, 0
+	ld [LOCAL_COUNTER], a
 
 :
-	call read_joypad
-	ld a, [PAD]
+	; Send P1 counter
+	ld a, [LOCAL_COUNTER]
 	call sio_master_transfer
+	call sio_wait_transfer
 
-	ld a, 10
-	call sio_master_transfer
+	; Read P2 counter, increment and send back
+	ld a, [hl]
+	add 2
+	call sio_slave_transfer
+	call sio_wait_transfer
 
-	call delay
+	; Get returned counter
+	ld a, [hl]
+	ld [RECEIVED_COUNTER], a
+	ld b, a
+
+	; Increment P1 Counter
+	ld a, [LOCAL_COUNTER]
+	add 2
+	ld [LOCAL_COUNTER], a
+	
+	; Compare for fun (not much that can be done without display)
+	sub b
+	ld [COMPARE_RESULT], a
+
+	; Loop
+	ld bc, 2
+	ld de, 40000
+	call big_delay
 	jr :-
 
-.slave:
-	;ld [hl], SLAVE_MODE
-	call init_sio_slave
+.p2:
+	; Init the counter
+	ld a, 1
+	ld [LOCAL_COUNTER], a
 
 :
-	ld a, 69
+	; Receive P1 counter, add and send back
+	ld a, [LOCAL_COUNTER]
 	call sio_slave_transfer
-	ld a, 10
-	call sio_slave_transfer
+	call sio_wait_transfer
+	ld a, [hl]
+	add 2
+	call sio_master_transfer
+	call sio_wait_transfer
 
-	call delay
+	; Increment P2 Counter
+	ld a, [LOCAL_COUNTER]
+	add 2
+	ld [LOCAL_COUNTER], a
+
+	; Retrieve counter returned by P1
+	ld a, [hl]
+	ld [RECEIVED_COUNTER], a
+	ld b, a
+
+	; Compare for fun (not much that can be done without display)
+	sub b
+	ld [COMPARE_RESULT], a
+
+	; Loop
+	ld bc, 2
+	ld de, 40000
+	call big_delay
 	jr :-
 
 
@@ -124,7 +180,30 @@ delay:
 	pop de
 	ret
 
+; ------------------------------
+; Wait for about (de*10) * bc cycles
+;
+; Inputs:
+;   - de: Nb cycles per iteration
+;   - bc: Nb iterations
+; ------------------------------
+big_delay:
+.iter:
+	dec bc
+	ld a, b
+	or c
+	jr z, .end
 
+.loop:
+	dec de
+	ld a, d
+	or e
+	jr z, .iter
+	nop
+	jr .loop
+
+.end
+	ret
 
 
 ;;;
