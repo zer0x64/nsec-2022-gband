@@ -128,6 +128,10 @@ impl Ppu {
             self.x = 0;
             self.y += 1;
 
+            // TODO: Selection priority
+            // During each scanline’s OAM scan, the PPU compares LY (using LCDC bit 2 to determine their size) to each object’s Y position to select up to 10 objects to be drawn on that line. The PPU scans OAM sequentially (from $FE00 to $FE9F), selecting the first (up to) 10 suitably-positioned objects.
+            // Since the PPU only checks the Y coordinate to select objects, even off-screen objects count towards the 10-objects-per-scanline limit. Merely setting an object’s X coordinate to X = 0 or X ≥ 168 (160 + 8) will hide it, but it will still count towards the limit, possibly causing another object later in OAM not to be drawn. To keep off-screen objects from affecting on-screen ones, make sure to set their Y coordinate to Y = 0 or Y ≥ 160 (144 + 16). (Y ≤ 8 also works if object size is set to 8x8.)
+
             match self.y {
                 143..=153 => {
                     // We are in VBLANK
@@ -366,6 +370,19 @@ impl Ppu {
 
     // FIXME: temporary naming for these functions (there are 16 bytes to read to actual find pixel
     // color… refer to wiki anyway)
+
+    fn read_sprite_attribute(&self, id: u8) {
+        const SPRITE_ATTRIBUTE_TABLE_BASE_ADDR: u16 = 0xFE00;
+        const SPRITE_ATTRIBUTE_SIZE: u8 = 4;
+
+        let addr_to_read =
+            SPRITE_ATTRIBUTE_TABLE_BASE_ADDR + u16::from(id) * u16::from(SPRITE_ATTRIBUTE_SIZE);
+
+        let y_position = self.read(addr_to_read) + 16;
+        let x_position = self.read(addr_to_read + 1) + 8;
+        let tile_index = self.read(addr_to_read + 2) + 8;
+        let flags = self.read(addr_to_read + 3) + 8;
+    }
 
     fn read_bg_win_tile(&self, id: u8) -> u8 {
         // See: https://gbdev.io/pandocs/Tile_Data.html
