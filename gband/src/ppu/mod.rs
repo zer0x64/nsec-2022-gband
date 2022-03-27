@@ -15,6 +15,8 @@ use lcd_status::LcdStatus;
 use crate::bus::PpuBus;
 use crate::InterruptReg;
 
+use self::fifo_mode::OamScanState;
+
 pub const FRAME_WIDTH: usize = 160;
 pub const FRAME_HEIGHT: usize = 144;
 
@@ -34,6 +36,7 @@ pub struct Ppu {
     vram: [u8; 0x4000],
     vram_bank_register: bool,
     oam: [u8; 0xa0],
+    secondary_oam: [u8; 40],
 
     cgb_bg_palette: CgbPalette,
     cgb_obj_palette: CgbPalette,
@@ -68,6 +71,7 @@ impl Default for Ppu {
             vram: [0u8; 0x4000],
             vram_bank_register: false,
             oam: [0u8; 0xa0],
+            secondary_oam: [0u8; 40],
 
             lcd_control_reg: Default::default(),
             lcd_status_reg: Default::default(),
@@ -101,7 +105,6 @@ impl Ppu {
     }
 
     pub fn clock(&mut self, bus: &mut PpuBus) {
-        // TODO: Actual rendering
         self.cycle += 1;
 
         if self.y < 153 {
@@ -152,14 +155,14 @@ impl Ppu {
                 154 => {
                     // End of the frame
                     self.y = 0;
-                    self.fifo_mode = FifoMode::OamScan;
+                    self.fifo_mode = FifoMode::OamScan(Default::default());
 
                     if self.lcd_status_reg.contains(LcdStatus::OAM_INTERUPT_SOURCE) {
                         bus.request_interrupt(InterruptReg::LCD_STAT);
                     }
                 }
                 _ => {
-                    self.fifo_mode = FifoMode::OamScan;
+                    self.fifo_mode = FifoMode::OamScan(Default::default());
 
                     if self.lcd_status_reg.contains(LcdStatus::OAM_INTERUPT_SOURCE) {
                         bus.request_interrupt(InterruptReg::LCD_STAT);
@@ -176,6 +179,8 @@ impl Ppu {
                 }
             };
         };
+
+        self.render();
     }
 
     pub fn ready_frame(&mut self) -> Option<Frame> {
@@ -220,7 +225,7 @@ impl Ppu {
 
     pub fn write_oam(&mut self, addr: u16, data: u8, force: bool) {
         match self.fifo_mode {
-            FifoMode::OamScan | FifoMode::Drawing => {
+            FifoMode::OamScan { .. } | FifoMode::Drawing => {
                 // Calls are blocked during this mode
                 // Do nothing, except if this is called by the OAM DMA
                 if !force {
@@ -238,7 +243,7 @@ impl Ppu {
 
     pub fn read_oam(&self, addr: u16, force: bool) -> u8 {
         match self.fifo_mode {
-            FifoMode::OamScan | FifoMode::Drawing => {
+            FifoMode::OamScan { .. } | FifoMode::Drawing => {
                 // Calls are blocked during this mode
                 // Do nothing and return trash, except if this is called by the OAM DMA
                 if !force {
@@ -337,7 +342,46 @@ impl Ppu {
         status_reg.bits()
     }
 
-    fn render(&self) {
+    fn render(&mut self) {
+        match &mut self.fifo_mode {
+            FifoMode::OamScan(OamScanState {
+                oam_pointer,
+                secondary_oam_pointer,
+                is_visible,
+            }) => {
+                if self.cycle & 1 == 0 {
+                    // On even cycle, fetch the y value and check if it's visible
+                    let y = self.oam[*oam_pointer];
+
+                    let sprite_size = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE) {
+                        16
+                    } else {
+                        8
+                    };
+                    let fine_y = self.y.wrapping_sub(y);
+
+                    *is_visible = fine_y < sprite_size;
+                } else {
+                    // On odd cycle, copy it to the secondary OAM
+
+                    if *is_visible {
+                        // Line is visible
+                        if *secondary_oam_pointer < self.secondary_oam.len() {
+                            self.secondary_oam[*secondary_oam_pointer..*secondary_oam_pointer + 4]
+                                .copy_from_slice(&self.oam[*oam_pointer..*oam_pointer + 4]);
+                            *secondary_oam_pointer += 4;
+                        }
+                    }
+
+                    *oam_pointer += 4
+                }
+            }
+            FifoMode::Drawing => {}
+            _ => {
+                // Don't render anything in HBLANK/VBLANK
+            }
+        }
+
         if self
             .lcd_control_reg
             .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
