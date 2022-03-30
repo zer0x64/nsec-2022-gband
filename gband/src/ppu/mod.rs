@@ -1,11 +1,12 @@
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
+use alloc::boxed::Box;
 
 mod cgb_palette;
 mod fifo_mode;
 mod lcd_control;
 mod lcd_status;
+mod pixel_fifo;
 
 use cgb_palette::CgbPalette;
 use fifo_mode::FifoMode;
@@ -15,7 +16,10 @@ use lcd_status::LcdStatus;
 use crate::bus::PpuBus;
 use crate::InterruptReg;
 
-use self::fifo_mode::OamScanState;
+use self::{
+    fifo_mode::{OamScanState, PixelFetcherState},
+    pixel_fifo::PixelFifo,
+};
 
 pub const FRAME_WIDTH: usize = 160;
 pub const FRAME_HEIGHT: usize = 144;
@@ -23,7 +27,7 @@ pub const FRAME_HEIGHT: usize = 144;
 pub type Frame = Box<[u8; FRAME_WIDTH * FRAME_HEIGHT * 4]>;
 
 pub struct Ppu {
-    x: u16,
+    x: u8,
     y: u8,
     y_compare: u8,
 
@@ -47,8 +51,8 @@ pub struct Ppu {
     lcd_control_reg: LcdControl,
     lcd_status_reg: LcdStatus,
 
-    background_pixel_pipeline: u128,
-    sprite_pixel_pipeline: u128,
+    background_pixel_pipeline: PixelFifo,
+    sprite_pixel_pipeline: PixelFifo,
 
     cycle: u16,
     fifo_mode: FifoMode,
@@ -89,8 +93,8 @@ impl Default for Ppu {
             greyscale_bg_palette: 0,
             greyscale_obj_palette: [0; 2],
 
-            background_pixel_pipeline: 0,
-            sprite_pixel_pipeline: 0,
+            background_pixel_pipeline: Default::default(),
+            sprite_pixel_pipeline: Default::default(),
 
             cycle: 0,
             fifo_mode: Default::default(),
@@ -107,20 +111,10 @@ impl Ppu {
     pub fn clock(&mut self, bus: &mut PpuBus) {
         self.cycle += 1;
 
-        if self.y < 153 {
+        if self.y < 144 {
             match self.cycle {
                 80 => {
-                    self.fifo_mode = FifoMode::Drawing;
-                }
-                352 => {
-                    // Hardcodes HBLANK for now
-                    self.fifo_mode = FifoMode::HBlank;
-                    if self
-                        .lcd_status_reg
-                        .contains(LcdStatus::HBANLK_INTERUPT_SOURCE)
-                    {
-                        bus.request_interrupt(InterruptReg::LCD_STAT);
-                    }
+                    self.fifo_mode = FifoMode::Drawing(Default::default());
                 }
                 _ => {}
             }
@@ -136,7 +130,7 @@ impl Ppu {
             // Since the PPU only checks the Y coordinate to select objects, even off-screen objects count towards the 10-objects-per-scanline limit. Merely setting an object’s X coordinate to X = 0 or X ≥ 168 (160 + 8) will hide it, but it will still count towards the limit, possibly causing another object later in OAM not to be drawn. To keep off-screen objects from affecting on-screen ones, make sure to set their Y coordinate to Y = 0 or Y ≥ 160 (144 + 16). (Y ≤ 8 also works if object size is set to 8x8.)
 
             match self.y {
-                143..=153 => {
+                144..=153 => {
                     // We are in VBLANK
                     self.fifo_mode = FifoMode::VBlank;
 
@@ -180,7 +174,7 @@ impl Ppu {
             };
         };
 
-        self.render();
+        self.render(bus);
     }
 
     pub fn ready_frame(&mut self) -> Option<Frame> {
@@ -198,7 +192,7 @@ impl Ppu {
 
     pub fn write_vram(&mut self, addr: u16, data: u8) {
         match self.fifo_mode {
-            FifoMode::Drawing => {
+            FifoMode::Drawing(_) => {
                 // Calls are blocked during this mode
                 // Do nothing
             }
@@ -211,21 +205,25 @@ impl Ppu {
 
     pub fn read_vram(&self, addr: u16) -> u8 {
         match self.fifo_mode {
-            FifoMode::Drawing => {
+            FifoMode::Drawing(_) => {
                 // Calls are blocked during this mode
                 // Do nothing and return trash
                 0xFF
             }
             _ => {
-                let addr = addr & 0x1FFF | if self.vram_bank_register { 0x2000 } else { 0 };
-                self.vram[addr as usize]
+                self.read_vram_unblocked(addr)
             }
         }
     }
 
+    fn read_vram_unblocked(&self, addr: u16) -> u8 {
+        let addr = addr & 0x1FFF | if self.vram_bank_register { 0x2000 } else { 0 };
+        self.vram[addr as usize]
+    }
+
     pub fn write_oam(&mut self, addr: u16, data: u8, force: bool) {
         match self.fifo_mode {
-            FifoMode::OamScan { .. } | FifoMode::Drawing => {
+            FifoMode::OamScan { .. } | FifoMode::Drawing(_) => {
                 // Calls are blocked during this mode
                 // Do nothing, except if this is called by the OAM DMA
                 if !force {
@@ -243,7 +241,7 @@ impl Ppu {
 
     pub fn read_oam(&self, addr: u16, force: bool) -> u8 {
         match self.fifo_mode {
-            FifoMode::OamScan { .. } | FifoMode::Drawing => {
+            FifoMode::OamScan(_) | FifoMode::Drawing(_) => {
                 // Calls are blocked during this mode
                 // Do nothing and return trash, except if this is called by the OAM DMA
                 if !force {
@@ -342,8 +340,11 @@ impl Ppu {
         status_reg.bits()
     }
 
-    fn render(&mut self) {
-        match &mut self.fifo_mode {
+    fn render(&mut self, bus: &mut PpuBus) {
+        // Work on a copy to fix borrow checker issue
+        let mut fifo_mode = self.fifo_mode;
+
+        match &mut fifo_mode {
             FifoMode::OamScan(OamScanState {
                 oam_pointer,
                 secondary_oam_pointer,
@@ -376,40 +377,143 @@ impl Ppu {
                     *oam_pointer += 4
                 }
             }
-            FifoMode::Drawing => {}
+            FifoMode::Drawing(state) => {
+                if self
+                    .lcd_control_reg
+                    .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
+                {
+                    // NOTE: assuming non-GBC mode only for now
+                    match state.pixel_fetcher {
+                        PixelFetcherState::GetTile => {
+                            // Get the tile used in this part of the map
+                            // Here we use a specific fetcher indexing
+                            // https://gbdev.io/pandocs/pixel_fifo.html
+                            if state.cycle == 0 {
+                                let x_index = ((self.scroll_x >> 3) + (state.fetcher_x)) & 0x1F;
+                                let y_index = self.y.wrapping_add(self.scroll_y) >> 3;
+                                let tile_map_idx = ((y_index as u16) << 5) | (x_index as u16);
+
+                                state.tile_idx = self.read_tile_index(tile_map_idx);
+                                state.cycle += 1;
+                            } else {
+                                state.pixel_fetcher = PixelFetcherState::GetTileLow;
+                                state.cycle = 0;
+                            }
+                        }
+                        PixelFetcherState::GetTileLow => {
+                            // Get the low bits of the used palette
+                            if state.cycle == 0 {
+                                let row = self.y.wrapping_add(self.scroll_y) & 0x7;
+                                let mut tile_data =
+                                    self.read_bg_win_tile(state.tile_idx, row << 1);
+
+                                // Put the tile data where it belongs in the buffer
+                                state.buffer = 0;
+                                for _ in 0..8 {
+                                    state.buffer >>= 16;
+                                    state.buffer |= (tile_data as u128 & 1) << 112;
+                                    tile_data >>= 1;
+                                }
+
+                                state.cycle += 1;
+                            } else {
+                                state.pixel_fetcher = PixelFetcherState::GetTileHigh;
+                                state.cycle = 0;
+                            }
+                        }
+                        PixelFetcherState::GetTileHigh => {
+                            // Get the low bits of the used palette
+                            if state.cycle == 0 {
+                                let row = self.y.wrapping_add(self.scroll_y) & 0x7;
+                                let mut tile_data =
+                                    self.read_bg_win_tile(state.tile_idx, (row << 1) | 1);
+
+                                // Put the tile data where it belongs in the buffer
+                                let mut buffer = 0;
+                                for _ in 0..8 {
+                                    buffer >>= 16;
+                                    buffer |= (tile_data as u128 & 1) << 113;
+                                    tile_data >>= 1;
+                                }
+
+                                state.buffer |= buffer;
+
+                                state.cycle += 1;
+                            } else {
+                                state.pixel_fetcher = PixelFetcherState::Sleep;
+                                state.cycle = 0;
+                            }
+                        }
+                        PixelFetcherState::Sleep => {
+                            // Do nothing for 2 cycles
+                            state.cycle += 1;
+                            if self.cycle >= 2 {
+                                state.pixel_fetcher = PixelFetcherState::Push;
+                                state.cycle = 0;
+                            }
+                        }
+                        PixelFetcherState::Push => {
+                            if self.background_pixel_pipeline.is_empty() {
+                                // Hang until pipeline is empty to load it
+                                self.background_pixel_pipeline.load(state.buffer);
+
+                                state.pixel_fetcher = PixelFetcherState::GetTile;
+                                log::info!("{}", state.fetcher_x);
+                                state.fetcher_x += 1;
+                            }
+                        }
+                    }
+
+                    match self.background_pixel_pipeline.pop() {
+                        Some(pixel) => {
+                            let base = ((self.y as usize) * FRAME_WIDTH + (self.x as usize)) * 4;
+                            if base + 3 < self.frame.len() {
+                                let greyscale = (pixel as u8 & 3) << 6;
+                                self.frame[base] = greyscale;
+                                self.frame[base + 1] = greyscale;
+                                self.frame[base + 2] = greyscale;
+                                self.frame[base + 3] = greyscale;
+    
+                                self.x += 1;
+    
+                                if self.x >= FRAME_WIDTH as u8 {
+                                    fifo_mode = FifoMode::HBlank;
+
+                                    if self
+                                        .lcd_status_reg
+                                        .contains(LcdStatus::HBANLK_INTERUPT_SOURCE)
+                                    {
+                                        bus.request_interrupt(InterruptReg::LCD_STAT);
+                                    }
+                                };
+                            }
+                        }
+                        None => {}
+                    }
+
+                    // if self.lcd_control_reg.contains(LcdControl::WINDOW_ENABLE) {
+                    //     // Position window using WX and WY registers
+                    //     let win_x = (self.x + u16::from(self.window_x)) as u8; // FIXME: check if `self.x` should not rather be a `u8`
+                    //     let win_y = self.y + self.window_y;
+
+                    //     // "Window visibility"
+                    //     // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
+
+                    //     // Window internal line counter
+                    //     // > The window keeps an internal line counter that’s functionally similar to LY, and increments alongside it. However, it only gets incremented when the window is visible, as described here.
+                    //     // https://gbdev.io/pandocs/Tile_Maps.html#window
+                    //     // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
+
+                    //     // TODO: write window
+                    // }
+                }
+            }
             _ => {
                 // Don't render anything in HBLANK/VBLANK
             }
         }
 
-        if self
-            .lcd_control_reg
-            .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
-        {
-            // NOTE: assuming non-GBC mode only for now
-
-            // Scroll using SCX and SCY registers
-            let bg_x = (self.x + u16::from(self.scroll_x)) as u8; // FIXME: check if `self.x` should not rather be a `u8`
-            let bg_y = self.y + self.scroll_y;
-
-            // TODO: write background
-
-            if self.lcd_control_reg.contains(LcdControl::WINDOW_ENABLE) {
-                // Position window using WX and WY registers
-                let win_x = (self.x + u16::from(self.window_x)) as u8; // FIXME: check if `self.x` should not rather be a `u8`
-                let win_y = self.y + self.window_y;
-
-                // "Window visibility"
-                // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
-
-                // Window internal line counter
-                // > The window keeps an internal line counter that’s functionally similar to LY, and increments alongside it. However, it only gets incremented when the window is visible, as described here.
-                // https://gbdev.io/pandocs/Tile_Maps.html#window
-                // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
-
-                // TODO: write window
-            }
-        }
+        self.fifo_mode = fifo_mode;
     }
 
     // FIXME: temporary naming for these functions (there are 16 bytes to read to actual find pixel
@@ -428,29 +532,29 @@ impl Ppu {
         let flags = self.read(addr_to_read + 3) + 8;
     }
 
-    fn read_bg_win_tile(&self, id: u8) -> u8 {
+    fn read_bg_win_tile(&self, id: u8, offset: u8) -> u8 {
         // See: https://gbdev.io/pandocs/Tile_Data.html
         if self
             .lcd_control_reg
             .contains(LcdControl::BACKGROUND_WINDOW_TILE_DATA_AREA)
         {
-            self.read_obj_tile(id)
+            self.read_obj_tile(id, offset)
         } else {
             let id = id as i8;
             let base_addr = 0x9000;
-            let addr_to_read = if let Ok(offset) = u16::try_from(id) {
-                base_addr + offset * 16
+            let addr_to_read = if let Ok(id) = u16::try_from(id) {
+                base_addr | (id << 4) | (offset as u16)
             } else {
-                base_addr - u16::try_from(-id).unwrap() * 16
+                (base_addr - u16::try_from(-id).unwrap() * 16) | (offset as u16)
             };
-            self.read_vram(addr_to_read)
+            self.read_vram_unblocked(addr_to_read)
         }
     }
 
-    fn read_obj_tile(&self, id: u8) -> u8 {
+    fn read_obj_tile(&self, id: u8, offset: u8) -> u8 {
         let base_addr = 0x8000;
-        let addr_to_read = base_addr + u16::from(id) * 16;
-        self.read_vram(addr_to_read)
+        let addr_to_read = base_addr | u16::from(id) << 4 | offset as u16;
+        self.read_vram_unblocked(addr_to_read)
     }
 
     fn read_tile_index(&self, id: u16) -> u8 {
@@ -460,10 +564,10 @@ impl Ppu {
             .contains(LcdControl::BACKGROUND_TILE_MAP_AREA)
         {
             let addr = 0x9C00 + id;
-            self.read_vram(addr)
+            self.read_vram_unblocked(addr)
         } else {
             let addr = 0x9800 + id;
-            self.read_vram(addr)
+            self.read_vram_unblocked(addr)
         }
     }
 }

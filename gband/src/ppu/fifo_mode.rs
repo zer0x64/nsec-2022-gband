@@ -3,7 +3,7 @@ pub enum FifoMode {
     HBlank,
     VBlank,
     OamScan(OamScanState),
-    Drawing,
+    Drawing(DrawingState),
 }
 
 #[derive(Clone, Copy, Default)]
@@ -11,6 +11,32 @@ pub struct OamScanState {
     pub oam_pointer: usize,
     pub secondary_oam_pointer: usize,
     pub is_visible: bool,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct DrawingState {
+    pub pixel_fetcher: PixelFetcherState,
+    pub cycle: u8,
+
+    pub fetcher_x: u8,
+
+    pub tile_idx: u8,
+    pub buffer: u128,
+}
+
+#[derive(Clone, Copy)]
+pub enum PixelFetcherState {
+    GetTile,
+    GetTileLow,
+    GetTileHigh,
+    Sleep,
+    Push,
+}
+
+impl Default for PixelFetcherState {
+    fn default() -> Self {
+        Self::GetTile
+    }
 }
 
 impl Default for FifoMode {
@@ -25,7 +51,7 @@ impl From<FifoMode> for u8 {
             FifoMode::HBlank => 0,
             FifoMode::VBlank => 1,
             FifoMode::OamScan(_) => 2,
-            FifoMode::Drawing => 3,
+            FifoMode::Drawing(_) => 3,
         }
     }
 }
