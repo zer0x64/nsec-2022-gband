@@ -21,7 +21,7 @@ pub struct DrawingState {
     pub fetcher_x: u8,
 
     pub tile_idx: u8,
-    pub buffer: u128,
+    pub buffer: [u16; 8],
 }
 
 #[derive(Clone, Copy)]
