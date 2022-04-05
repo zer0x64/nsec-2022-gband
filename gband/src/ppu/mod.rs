@@ -361,13 +361,16 @@ impl Ppu {
                     } else {
                         8
                     };
-                    let fine_y = self.y.wrapping_sub(y);
 
-                    *is_visible = fine_y < sprite_size;
+                    // The index is y + 16, so the sprite can be hidden off at 0. This is why we add 16 here
+                    let y_remainder = self.y.wrapping_sub(y).wrapping_add(16);
+
+                    *is_visible = y_remainder < sprite_size;
                 } else {
-                    // On odd cycle, copy it to the secondary OAM
 
+                    // On odd cycle, copy it to the secondary OAM
                     if *is_visible {
+
                         // Line is visible
                         if *secondary_oam_pointer < self.secondary_oam.len() {
                             self.secondary_oam[*secondary_oam_pointer..*secondary_oam_pointer + 4]
@@ -453,20 +456,102 @@ impl Ppu {
                             // Hang until pipeline is empty to load it
                             self.background_pixel_pipeline.load(state.buffer);
 
+                            for _ in 0..(self.scroll_x.wrapping_add(self.x)) & 0x7 {
+                                // Drain the extra pixels
+                                let _ = self.background_pixel_pipeline.pop();
+                            }
+
                             state.pixel_fetcher = PixelFetcherState::GetTile;
                             state.fetcher_x += 1;
                         }
                     }
                 }
 
+                // Load sprites into the pipeline
+                if self.sprite_pixel_pipeline.is_empty() {
+                    // Iterate the sprite and load a line
+                    for sprite in self.secondary_oam.chunks_exact(4) {
+                        let sprite = <&[u8; 4]>::try_from(sprite)
+                            .expect("secondary OAM should always be chunks of 4");
+
+                        // The sprite address is x + 8, so it can be hidden if set at 0
+                        let x_remainder = self.x.wrapping_sub(sprite[1]).wrapping_add(8);
+
+                        if x_remainder < 8 {
+                            let mut buffer = [0u16; 8];
+
+                            let sprite_size = if self
+                                .lcd_control_reg
+                                .contains(LcdControl::OBJ_SIZE) {
+                                    15
+                                } else { 7 };
+                            
+                            let mut fine_y = self.y.wrapping_sub(sprite[0]).wrapping_add(16) & sprite_size;
+
+                            // Y flip
+                            if sprite[3] & 0x40 > 0 {
+                                fine_y = sprite_size - fine_y;
+                            }
+
+                            let mut lo = self.read_obj_tile(sprite[2], fine_y << 1);
+                            let mut hi = self.read_obj_tile(sprite[2], (fine_y << 1) | 1);
+
+                            // X flip
+                            if sprite[3] & 0x20 > 0 {
+                                lo = lo.reverse_bits();
+                                hi = hi.reverse_bits();
+                            }
+
+                            for val in &mut buffer {
+                                *val |= lo as u16 & 1;
+                                *val |= (hi as u16 & 1) << 1;
+
+                                // Palettes and priority
+                                *val |= (sprite[3] & 0x90) as u16;
+
+                                lo >>= 1;
+                                hi >>= 1;
+                            }
+
+                            self.sprite_pixel_pipeline.load(buffer);
+
+                            for _ in 0..x_remainder {
+                                // Drain the extra pixels
+                                let _ = self.sprite_pixel_pipeline.pop();
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // Rendering...
                 match self.background_pixel_pipeline.pop() {
                     Some(pixel) => {
                         let base = ((self.y as usize) * FRAME_WIDTH + (self.x as usize)) * 4;
                         if base + 3 < self.frame.len() {
-                            // Index the pixel in the palette
-                            let pixel =
-                                (self.greyscale_bg_palette >> ((pixel as u8 & 0x3) << 1)) & 0x3;
-                            
+                            // Check for sprite pixels...
+                            let pixel = if let Some(sprite_pixel) = self.sprite_pixel_pipeline.pop()
+                            {
+                                let palette = (sprite_pixel as usize & 0x10) >> 4;
+                                let bg_over_obj = (sprite_pixel & 0x80) == 0x80;
+
+                                if sprite_pixel & 3 == 0 || (bg_over_obj && (pixel & 3 != 0)) {
+                                    // Pixel is transparent or under the background. Rendering background instead
+                                    // Index the pixel in the palette
+                                    (self.greyscale_bg_palette >> ((pixel as u8 & 0x3) << 1)) & 0x3
+                                } else {
+                                    // Renderng the sprite pixel
+                                    // Index the pixel in the palette
+                                    (self.greyscale_obj_palette[palette]
+                                        >> ((sprite_pixel as u8 & 0x3) << 1))
+                                        & 0x3
+                                }
+                            } else {
+                                // No sprite, rendering the background
+                                // Index the pixel in the palette
+                                (self.greyscale_bg_palette >> ((pixel as u8 & 0x3) << 1)) & 0x3
+                            };
+
                             // Convert to RGBA
                             let greyscale = !(pixel as u8 & 3) << 6;
                             self.frame[base] = greyscale;
@@ -477,6 +562,13 @@ impl Ppu {
                             self.x += 1;
 
                             if self.x >= FRAME_WIDTH as u8 {
+                                // We enter HBlank here
+
+                                // Reset some buffers
+                                self.background_pixel_pipeline = Default::default();
+                                self.sprite_pixel_pipeline = Default::default();
+                                self.secondary_oam = [0u8; 40];
+
                                 fifo_mode = FifoMode::HBlank;
 
                                 if self
@@ -553,7 +645,7 @@ impl Ppu {
 
     fn read_obj_tile(&self, id: u8, offset: u8) -> u8 {
         let base_addr = 0x8000;
-        let addr_to_read = base_addr | u16::from(id) << 4 | offset as u16;
+        let addr_to_read = base_addr | (u16::from(id) << 4) | offset as u16;
         self.read_vram_unblocked(addr_to_read)
     }
 
