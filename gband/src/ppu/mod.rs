@@ -237,7 +237,7 @@ impl Ppu {
             }
         }
 
-        let addr = addr & 0x7F;
+        let addr = addr & 0xFF;
         self.oam[addr as usize] = data;
     }
 
@@ -255,7 +255,7 @@ impl Ppu {
             }
         }
 
-        let addr = addr & 0x7F;
+        let addr = addr & 0xFF;
         self.oam[addr as usize]
     }
 
@@ -367,10 +367,8 @@ impl Ppu {
 
                     *is_visible = y_remainder < sprite_size;
                 } else {
-
                     // On odd cycle, copy it to the secondary OAM
                     if *is_visible {
-
                         // Line is visible
                         if *secondary_oam_pointer < self.secondary_oam.len() {
                             self.secondary_oam[*secondary_oam_pointer..*secondary_oam_pointer + 4]
@@ -480,13 +478,15 @@ impl Ppu {
                         if x_remainder < 8 {
                             let mut buffer = [0u16; 8];
 
-                            let sprite_size = if self
-                                .lcd_control_reg
-                                .contains(LcdControl::OBJ_SIZE) {
-                                    15
-                                } else { 7 };
-                            
-                            let mut fine_y = self.y.wrapping_sub(sprite[0]).wrapping_add(16) & sprite_size;
+                            let sprite_size = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE)
+                            {
+                                15
+                            } else {
+                                7
+                            };
+
+                            let mut fine_y =
+                                self.y.wrapping_sub(sprite[0]).wrapping_add(16) & sprite_size;
 
                             // Y flip
                             if sprite[3] & 0x40 > 0 {
