@@ -463,6 +463,11 @@ impl Ppu {
                     Some(pixel) => {
                         let base = ((self.y as usize) * FRAME_WIDTH + (self.x as usize)) * 4;
                         if base + 3 < self.frame.len() {
+                            // Index the pixel in the palette
+                            let pixel =
+                                (self.greyscale_bg_palette >> ((pixel as u8 & 0x3) << 1)) & 0x3;
+                            
+                            // Convert to RGBA
                             let greyscale = !(pixel as u8 & 3) << 6;
                             self.frame[base] = greyscale;
                             self.frame[base + 1] = greyscale;
