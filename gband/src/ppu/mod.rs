@@ -386,17 +386,43 @@ impl Ppu {
                 //     .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
                 // {
                 // NOTE: assuming non-GBC mode only for now
+
+                if !state.is_window && self.lcd_control_reg.contains(LcdControl::WINDOW_ENABLE) {
+                    if self.y >= self.window_y && self.x >= self.window_x.wrapping_sub(7) {
+                        // We start rendering the window
+                        // We flush the entire state and signal that we start to render the window
+                        state.cycle = 0;
+                        state.tile_idx = 0;
+                        state.fetcher_x = 0;
+                        state.buffer = Default::default();
+                        state.pixel_fetcher = Default::default();
+
+                        state.is_window = true;
+                    }
+                }
+
                 match state.pixel_fetcher {
                     PixelFetcherState::GetTile => {
                         // Get the tile used in this part of the map
                         // Here we use a specific fetcher indexing
                         // https://gbdev.io/pandocs/pixel_fifo.html
                         if state.cycle == 0 {
-                            let x_index = ((self.scroll_x >> 3) + (state.fetcher_x)) & 0x1F;
-                            let y_index = self.y.wrapping_add(self.scroll_y) >> 3;
-                            let tile_map_idx = ((y_index as u16) << 5) | (x_index as u16);
+                            state.tile_idx = if !state.is_window {
+                                let x_index = ((self.scroll_x >> 3) + (state.fetcher_x)) & 0x1F;
+                                let y_index = self.y.wrapping_add(self.scroll_y) >> 3;
+                                let tile_map_idx = ((y_index as u16) << 5) | (x_index as u16);
 
-                            state.tile_idx = self.read_tile_index(tile_map_idx);
+                                self.read_bg_tile_index(tile_map_idx)
+                            } else {
+                                let x_index =
+                                    (state.fetcher_x.wrapping_sub(self.window_x >> 3)) & 0x1F;
+                                let y_index = self.y.wrapping_sub(self.window_y) >> 3;
+
+                                let tile_map_idx =
+                                    ((y_index as u16) << 5) | (x_index as u16 & 0x1F);
+                                self.read_win_tile_index(tile_map_idx)
+                            };
+
                             state.cycle += 1;
                         } else {
                             state.pixel_fetcher = PixelFetcherState::GetTileLow;
@@ -406,7 +432,12 @@ impl Ppu {
                     PixelFetcherState::GetTileLow => {
                         // Get the low bits of the used palette
                         if state.cycle == 0 {
-                            let row = self.y.wrapping_add(self.scroll_y) & 0x7;
+                            let row = if state.is_window {
+                                self.y.wrapping_add(self.window_y) & 0x7
+                            } else {
+                                self.y.wrapping_add(self.scroll_y) & 0x7
+                            };
+
                             let mut tile_data = self.read_bg_win_tile(state.tile_idx, row << 1);
 
                             // Put the tile data where it belongs in the buffer
@@ -425,7 +456,12 @@ impl Ppu {
                     PixelFetcherState::GetTileHigh => {
                         // Get the low bits of the used palette
                         if state.cycle == 0 {
-                            let row = self.y.wrapping_add(self.scroll_y) & 0x7;
+                            let row = if state.is_window {
+                                self.y.wrapping_add(self.window_y) & 0x7
+                            } else {
+                                self.y.wrapping_add(self.scroll_y) & 0x7
+                            };
+
                             let mut tile_data =
                                 self.read_bg_win_tile(state.tile_idx, (row << 1) | 1);
 
@@ -454,9 +490,11 @@ impl Ppu {
                             // Hang until pipeline is empty to load it
                             self.background_pixel_pipeline.load(state.buffer);
 
-                            for _ in 0..(self.scroll_x.wrapping_add(self.x)) & 0x7 {
-                                // Drain the extra pixels
-                                let _ = self.background_pixel_pipeline.pop();
+                            if !state.is_window {
+                                for _ in 0..(self.scroll_x.wrapping_add(self.x)) & 0x7 {
+                                    // Drain the extra pixels
+                                    let _ = self.background_pixel_pipeline.pop();
+                                }
                             }
 
                             state.pixel_fetcher = PixelFetcherState::GetTile;
@@ -582,23 +620,6 @@ impl Ppu {
                     }
                     None => {}
                 }
-
-                // if self.lcd_control_reg.contains(LcdControl::WINDOW_ENABLE) {
-                //     // Position window using WX and WY registers
-                //     let win_x = (self.x + u16::from(self.window_x)) as u8; // FIXME: check if `self.x` should not rather be a `u8`
-                //     let win_y = self.y + self.window_y;
-
-                //     // "Window visibility"
-                //     // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
-
-                //     // Window internal line counter
-                //     // > The window keeps an internal line counter that’s functionally similar to LY, and increments alongside it. However, it only gets incremented when the window is visible, as described here.
-                //     // https://gbdev.io/pandocs/Tile_Maps.html#window
-                //     // https://gbdev.io/pandocs/Scrolling.html#ff4a---wy-window-y-position-rw-ff4b---wx-window-x-position--7-rw
-
-                //     // TODO: write window
-                // }
-                //}
             }
             _ => {
                 // Don't render anything in HBLANK/VBLANK
@@ -606,22 +627,6 @@ impl Ppu {
         }
 
         self.fifo_mode = fifo_mode;
-    }
-
-    // FIXME: temporary naming for these functions (there are 16 bytes to read to actual find pixel
-    // color… refer to wiki anyway)
-
-    fn read_sprite_attribute(&self, id: u8) {
-        const SPRITE_ATTRIBUTE_TABLE_BASE_ADDR: u16 = 0xFE00;
-        const SPRITE_ATTRIBUTE_SIZE: u8 = 4;
-
-        let addr_to_read =
-            SPRITE_ATTRIBUTE_TABLE_BASE_ADDR + u16::from(id) * u16::from(SPRITE_ATTRIBUTE_SIZE);
-
-        let y_position = self.read(addr_to_read) + 16;
-        let x_position = self.read(addr_to_read + 1) + 8;
-        let tile_index = self.read(addr_to_read + 2) + 8;
-        let flags = self.read(addr_to_read + 3) + 8;
     }
 
     fn read_bg_win_tile(&self, id: u8, offset: u8) -> u8 {
@@ -649,11 +654,25 @@ impl Ppu {
         self.read_vram_unblocked(addr_to_read)
     }
 
-    fn read_tile_index(&self, id: u16) -> u8 {
+    fn read_bg_tile_index(&self, id: u16) -> u8 {
         // See: https://gbdev.io/pandocs/Tile_Maps.html
         if self
             .lcd_control_reg
             .contains(LcdControl::BACKGROUND_TILE_MAP_AREA)
+        {
+            let addr = 0x9C00 | id;
+            self.read_vram_unblocked(addr)
+        } else {
+            let addr = 0x9800 | id;
+            self.read_vram_unblocked(addr)
+        }
+    }
+
+    fn read_win_tile_index(&self, id: u16) -> u8 {
+        // See: https://gbdev.io/pandocs/Tile_Maps.html
+        if self
+            .lcd_control_reg
+            .contains(LcdControl::WINDOW_TILE_MAP_AREA)
         {
             let addr = 0x9C00 | id;
             self.read_vram_unblocked(addr)

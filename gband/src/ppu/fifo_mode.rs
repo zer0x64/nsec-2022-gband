@@ -16,6 +16,7 @@ pub struct OamScanState {
 #[derive(Clone, Copy, Default)]
 pub struct DrawingState {
     pub pixel_fetcher: PixelFetcherState,
+    pub is_window: bool,
     pub cycle: u8,
 
     pub fetcher_x: u8,
