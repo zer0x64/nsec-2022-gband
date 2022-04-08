@@ -531,8 +531,16 @@ impl Ppu {
                                 fine_y = sprite_size - fine_y;
                             }
 
-                            let mut lo = self.read_obj_tile(sprite[2], fine_y << 1);
-                            let mut hi = self.read_obj_tile(sprite[2], (fine_y << 1) | 1);
+                            let tile_id = if sprite_size > 7 {
+                                (sprite[2] & 0xFE) | ((fine_y & 0x08) >> 3)
+                            } else {
+                                sprite[2]
+                            };
+
+                            let fine_y = fine_y & 0x07;
+
+                            let mut lo = self.read_obj_tile(tile_id, fine_y << 1);
+                            let mut hi = self.read_obj_tile(tile_id, (fine_y << 1) | 1);
 
                             // X flip
                             if sprite[3] & 0x20 > 0 {
