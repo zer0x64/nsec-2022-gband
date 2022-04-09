@@ -504,6 +504,7 @@ impl Ppu {
                 }
 
                 // Load sprites into the pipeline
+                // if self.lcd_control_reg.contains(LcdControl::OBJ_ENABLE) { // This condition is only for when on DMG!
                 if self.sprite_pixel_pipeline.is_empty() {
                     // Iterate the sprite and load a line
                     for sprite in self.secondary_oam.chunks_exact(4) {
@@ -581,8 +582,8 @@ impl Ppu {
                                 let palette = (sprite_pixel as usize & 0x10) >> 4;
                                 let bg_over_obj = (sprite_pixel & 0x80) == 0x80;
 
-                                if sprite_pixel & 3 == 0 || (bg_over_obj && (pixel & 3 != 0)) {
-                                    // Pixel is transparent or under the background. Rendering background instead
+                                if !self.lcd_control_reg.contains(LcdControl::OBJ_ENABLE) || sprite_pixel & 3 == 0 || (bg_over_obj && (pixel & 3 != 0)) {
+                                    // Pixel is transparent, under the background or LCDC.1 is disabled. Rendering background instead
                                     // Index the pixel in the palette
                                     (self.greyscale_bg_palette >> ((pixel as u8 & 0x3) << 1)) & 0x3
                                 } else {
