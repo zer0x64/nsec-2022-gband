@@ -630,7 +630,12 @@ impl Ppu {
                     {
                         // Pixel is transparent, under the background or LCDC.1 is disabled. Rendering background instead
                         // Index the pixel in the palette
-                        (self.greyscale_bg_palette >> ((background_pixel as u8 & 0x3) << 1)) & 0x3
+                        if self.lcd_control_reg.contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY) {
+                            (self.greyscale_bg_palette >> ((background_pixel as u8 & 0x3) << 1)) & 0x3
+                        } else {
+                            // Very simple and potentially incomplete implementation of LCDC.0 for DMG. For CGB, there should be more to do as well.
+                            self.greyscale_bg_palette & 0x3
+                        }                    
                     } else {
                         // Renderng the sprite pixel
                         // Index the pixel in the palette
