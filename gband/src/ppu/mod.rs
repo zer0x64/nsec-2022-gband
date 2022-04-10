@@ -230,36 +230,38 @@ impl Ppu {
     }
 
     pub fn write_oam(&mut self, addr: u16, data: u8, force: bool) {
-        match self.fifo_mode {
-            FifoMode::OamScan { .. } | FifoMode::Drawing(_) => {
-                // Calls are blocked during this mode
-                // Do nothing, except if this is called by the OAM DMA
-                if !force {
-                    return;
-                }
-            }
-            _ => {
-                // Continue normally
-            }
-        }
+        // TODO: Redo write block
+        // match self.fifo_mode {
+        //     FifoMode::OamScan { .. } | FifoMode::Drawing(_) => {
+        //         // Calls are blocked during this mode
+        //         // Do nothing, except if this is called by the OAM DMA
+        //         if !force {
+        //             return;
+        //         }
+        //     }
+        //     _ => {
+        //         // Continue normally
+        //     }
+        // }
 
         let addr = addr & 0xFF;
         self.oam[addr as usize] = data;
     }
 
     pub fn read_oam(&self, addr: u16, force: bool) -> u8 {
-        match self.fifo_mode {
-            FifoMode::OamScan(_) | FifoMode::Drawing(_) => {
-                // Calls are blocked during this mode
-                // Do nothing and return trash, except if this is called by the OAM DMA
-                if !force {
-                    return 0xFF;
-                }
-            }
-            _ => {
-                // Continue normally
-            }
-        }
+        // TODO: Redo read block
+        // match self.fifo_mode {
+        //     FifoMode::OamScan(_) | FifoMode::Drawing(_) => {
+        //         // Calls are blocked during this mode
+        //         // Do nothing and return trash, except if this is called by the OAM DMA
+        //         if !force {
+        //             return 0xFF;
+        //         }
+        //     }
+        //     _ => {
+        //         // Continue normally
+        //     }
+        // }
 
         let addr = addr & 0xFF;
         self.oam[addr as usize]
@@ -371,7 +373,7 @@ impl Ppu {
                     // The index is y + 16, so the sprite can be hidden off at 0. This is why we add 16 here
                     let y_remainder = self.y.wrapping_sub(y).wrapping_add(16);
 
-                    *is_visible = (y_remainder < sprite_size) && (self.oam[*oam_pointer + 1] != 0);
+                    *is_visible = (y_remainder < sprite_size) && (self.oam[*oam_pointer + 1] > 0);
                 } else {
                     // On odd cycle, copy it to the secondary OAM
                     if *is_visible {
@@ -568,9 +570,15 @@ impl Ppu {
                     }
                     PixelFetcherState::Push => {
                         if state.is_sprite {
+                            let sprite_properties = self.secondary_oam[(state.sprite_idx + 3) as usize];
                             // X flip
-                            if self.secondary_oam[(state.sprite_idx + 3) as usize] & 0x20 > 0 {
+                            if sprite_properties & 0x20 > 0 {
                                 state.buffer.reverse();
+                            }
+
+                            // Add palette and priority bits
+                            for b in &mut state.buffer {
+                                *b |= (sprite_properties & 0x90) as u16;
                             }
 
                             self.sprite_pixel_pipeline.load(state.buffer);
