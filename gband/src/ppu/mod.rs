@@ -408,6 +408,8 @@ impl Ppu {
 
                         state.is_window = true;
                         state.fetcher_x = 0;
+
+                        self.background_pixel_pipeline.empty();
                     }
                 }
 
@@ -443,8 +445,7 @@ impl Ppu {
                                 self.secondary_oam[(state.sprite_idx + 2) as usize]
                             } else if state.is_window {
                                 // For window, we use the internal window Y counter and the X fetch counter
-                                let x_index =
-                                    (state.fetcher_x) & 0x1F;
+                                let x_index = (state.fetcher_x) & 0x1F;
                                 let y_index = self.window_y_counter >> 3;
                                 let tile_map_idx =
                                     ((y_index as u16) << 5) | (x_index as u16 & 0x1F);
@@ -496,12 +497,8 @@ impl Ppu {
                             self.sprite_pixel_pipeline.load(state.buffer);
 
                             if self.x == 0 {
-                                for _ in
-                                    0..(8 - self.secondary_oam[(state.sprite_idx + 1) as usize])
-                                {
-                                    // Drain the extra pixels
-                                    let _ = self.sprite_pixel_pipeline.pop();
-                                }
+                                self.sprite_pixel_pipeline
+                                    .drain(8 - self.secondary_oam[(state.sprite_idx + 1) as usize]);
                             }
 
                             state.is_sprite = false;
@@ -514,9 +511,12 @@ impl Ppu {
                                 self.background_pixel_pipeline.load(state.buffer);
 
                                 if !state.is_window {
-                                    for _ in 0..(self.scroll_x.wrapping_add(self.x)) & 0x7 {
-                                        // Drain the extra pixels
-                                        let _ = self.background_pixel_pipeline.pop();
+                                    self.background_pixel_pipeline
+                                        .drain((self.scroll_x.wrapping_add(self.x)) & 0x7);
+                                } else {
+                                    if self.x == 0 {
+                                        self.background_pixel_pipeline
+                                            .drain(7u8.wrapping_sub(self.window_x) & 0x7);
                                     }
                                 }
 

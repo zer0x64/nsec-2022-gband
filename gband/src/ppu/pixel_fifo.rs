@@ -9,6 +9,18 @@ impl PixelFifo {
         self.n_pixels == 0
     }
 
+    pub fn empty(&mut self) {
+        self.n_pixels = 0;
+        self.fifo = Default::default();
+    }
+
+    pub fn drain(&mut self, n_pixels: u8) {
+        for _ in 0..n_pixels {
+            // Drain the extra pixels
+            let _ = self.pop();
+        }
+    }
+
     pub fn pop(&mut self) -> u16 {
         if self.n_pixels == 0 {
             self.fifo[7]
