@@ -35,6 +35,17 @@ impl DrawingState {
         self.tile_idx = 0;
         self.buffer = Default::default();
     }
+
+    pub fn advance_fetcher_state(&mut self) {
+        self.pixel_fetcher = match self.pixel_fetcher {
+            PixelFetcherState::GetTile => PixelFetcherState::GetTileLow,
+            PixelFetcherState::GetTileLow => PixelFetcherState::GetTileHigh,
+            PixelFetcherState::GetTileHigh => PixelFetcherState::Push,
+            PixelFetcherState::Push => PixelFetcherState::GetTile,
+        };
+
+        self.cycle = 0;
+    }
 }
 
 #[derive(Clone, Copy)]

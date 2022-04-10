@@ -17,7 +17,7 @@ use crate::bus::PpuBus;
 use crate::InterruptReg;
 
 use self::{
-    fifo_mode::{OamScanState, PixelFetcherState},
+    fifo_mode::{DrawingState, OamScanState, PixelFetcherState},
     pixel_fifo::PixelFifo,
 };
 
@@ -461,124 +461,28 @@ impl Ppu {
 
                             state.cycle += 1;
                         } else {
-                            state.pixel_fetcher = PixelFetcherState::GetTileLow;
-                            state.cycle = 0;
+                            state.advance_fetcher_state()
                         }
                     }
                     PixelFetcherState::GetTileLow => {
-                        // Get the low bits of the used palette
                         if state.cycle == 0 {
-                            let mut tile_data = if state.is_sprite {
-                                let sprite_size =
-                                    if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE) {
-                                        15
-                                    } else {
-                                        7
-                                    };
-
-                                let mut fine_y = self
-                                    .y
-                                    .wrapping_sub(self.secondary_oam[state.sprite_idx as usize])
-                                    .wrapping_add(16)
-                                    & sprite_size;
-
-                                // Y flip
-                                if self.secondary_oam[(state.sprite_idx + 3) as usize] & 0x40 > 0 {
-                                    fine_y = sprite_size - fine_y;
-                                }
-
-                                // For 8x16 sprites, get the right index
-                                let tile_id = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE)
-                                {
-                                    (state.tile_idx & 0xFE) | ((fine_y & 0x08) >> 3)
-                                } else {
-                                    state.tile_idx
-                                };
-
-                                self.read_obj_tile(tile_id, fine_y << 1)
-                            } else {
-                                let row = if state.is_window {
-                                    // For sprite, we select using the internal window Y counter
-                                    self.window_y_counter & 0x7
-                                } else {
-                                    // For background, we select using the scanline number as Y
-                                    self.y.wrapping_add(self.scroll_y) & 0x7
-                                };
-
-                                self.read_bg_win_tile(state.tile_idx, row << 1)
-                            };
-
-                            // Put the tile data where it belongs in the buffer
                             state.buffer = [0u16; 8];
-                            for val in &mut state.buffer {
-                                *val |= tile_data as u16 & 1;
-                                tile_data >>= 1;
-                            }
-
-                            state.cycle += 1;
+                            self.fetcher_get_tile(state, false)
                         } else {
-                            state.pixel_fetcher = PixelFetcherState::GetTileHigh;
-                            state.cycle = 0;
+                            state.advance_fetcher_state()
                         }
                     }
                     PixelFetcherState::GetTileHigh => {
-                        // Get the low bits of the used palette
                         if state.cycle == 0 {
-                            let mut tile_data = if state.is_sprite {
-                                let sprite_size =
-                                    if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE) {
-                                        15
-                                    } else {
-                                        7
-                                    };
-
-                                let mut fine_y = self
-                                    .y
-                                    .wrapping_sub(self.secondary_oam[state.sprite_idx as usize])
-                                    .wrapping_add(16)
-                                    & sprite_size;
-
-                                // Y flip
-                                if self.secondary_oam[(state.sprite_idx + 3) as usize] & 0x40 > 0 {
-                                    fine_y = sprite_size - fine_y;
-                                }
-
-                                // For 8x16 sprites, get the right index
-                                let tile_id = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE)
-                                {
-                                    (state.tile_idx & 0xFE) | ((fine_y & 0x08) >> 3)
-                                } else {
-                                    state.tile_idx
-                                };
-
-                                self.read_obj_tile(tile_id, (fine_y << 1) | 1)
-                            } else {
-                                let row = if state.is_window {
-                                    // For sprite, we select using the internal window Y counter
-                                    self.window_y_counter & 0x7
-                                } else {
-                                    // For background, we select using the scanline number as Y
-                                    self.y.wrapping_add(self.scroll_y) & 0x7
-                                };
-
-                                self.read_bg_win_tile(state.tile_idx, (row << 1) | 1)
-                            };
-
-                            // Put the tile data where it belongs in the buffer
-                            for val in &mut state.buffer {
-                                *val |= (tile_data as u16 & 1) << 1;
-                                tile_data >>= 1;
-                            }
-
-                            state.cycle += 1;
+                            self.fetcher_get_tile(state, true)
                         } else {
-                            state.pixel_fetcher = PixelFetcherState::Push;
-                            state.cycle = 0;
+                            state.advance_fetcher_state()
                         }
                     }
                     PixelFetcherState::Push => {
                         if state.is_sprite {
-                            let sprite_properties = self.secondary_oam[(state.sprite_idx + 3) as usize];
+                            let sprite_properties =
+                                self.secondary_oam[(state.sprite_idx + 3) as usize];
                             // X flip
                             if sprite_properties & 0x20 > 0 {
                                 state.buffer.reverse();
@@ -600,7 +504,6 @@ impl Ppu {
                                 }
                             }
 
-                            state.pixel_fetcher = PixelFetcherState::GetTile;
                             state.is_sprite = false;
 
                             // Remove the sprite
@@ -617,10 +520,11 @@ impl Ppu {
                                     }
                                 }
 
-                                state.pixel_fetcher = PixelFetcherState::GetTile;
                                 state.fetcher_x += 1;
                             }
                         }
+
+                        state.advance_fetcher_state()
                     }
                 }
 
@@ -638,12 +542,16 @@ impl Ppu {
                     {
                         // Pixel is transparent, under the background or LCDC.1 is disabled. Rendering background instead
                         // Index the pixel in the palette
-                        if self.lcd_control_reg.contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY) {
-                            (self.greyscale_bg_palette >> ((background_pixel as u8 & 0x3) << 1)) & 0x3
+                        if self
+                            .lcd_control_reg
+                            .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
+                        {
+                            (self.greyscale_bg_palette >> ((background_pixel as u8 & 0x3) << 1))
+                                & 0x3
                         } else {
                             // Very simple and potentially incomplete implementation of LCDC.0 for DMG. For CGB, there should be more to do as well.
                             self.greyscale_bg_palette & 0x3
-                        }                    
+                        }
                     } else {
                         // Renderng the sprite pixel
                         // Index the pixel in the palette
@@ -746,6 +654,57 @@ impl Ppu {
             let addr = 0x9800 | id;
             self.read_vram_unblocked(addr)
         }
+    }
+
+    fn fetcher_get_tile(&self, state: &mut DrawingState, hi: bool) {
+        // Decides if we load the lower or higher bits
+        let plane = if hi { 1 } else { 0 };
+
+        let mut tile_data = if state.is_sprite {
+            let sprite_size = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE) {
+                15
+            } else {
+                7
+            };
+
+            let mut fine_y = self
+                .y
+                .wrapping_sub(self.secondary_oam[state.sprite_idx as usize])
+                .wrapping_add(16)
+                & sprite_size;
+
+            // Y flip
+            if self.secondary_oam[(state.sprite_idx + 3) as usize] & 0x40 > 0 {
+                fine_y = sprite_size - fine_y;
+            }
+
+            // For 8x16 sprites, get the right index
+            let tile_id = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE) {
+                (state.tile_idx & 0xFE) | ((fine_y & 0x08) >> 3)
+            } else {
+                state.tile_idx
+            };
+
+            self.read_obj_tile(tile_id, (fine_y << 1) | plane)
+        } else {
+            let row = if state.is_window {
+                // For sprite, we select using the internal window Y counter
+                self.window_y_counter & 0x7
+            } else {
+                // For background, we select using the scanline number as Y
+                self.y.wrapping_add(self.scroll_y) & 0x7
+            };
+
+            self.read_bg_win_tile(state.tile_idx, (row << 1) | plane)
+        };
+
+        // Put the tile data where it belongs in the buffer
+        for val in &mut state.buffer {
+            *val |= (tile_data as u16 & 1) << plane;
+            tile_data >>= 1;
+        }
+
+        state.cycle += 1;
     }
 }
 
