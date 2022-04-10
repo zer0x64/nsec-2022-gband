@@ -401,7 +401,7 @@ impl Ppu {
                 }
 
                 if !state.is_window && self.lcd_control_reg.contains(LcdControl::WINDOW_ENABLE) {
-                    if self.window_y_flag && self.x >= self.window_x.wrapping_sub(7) {
+                    if self.window_y_flag && self.x.wrapping_add(7) >= self.window_x {
                         // We start rendering the window
                         // We flush the entire state and signal that we start to render the window
                         state.reset();
@@ -444,7 +444,7 @@ impl Ppu {
                             } else if state.is_window {
                                 // For window, we use the internal window Y counter and the X fetch counter
                                 let x_index =
-                                    (state.fetcher_x.wrapping_sub(self.window_x >> 3)) & 0x1F;
+                                    (state.fetcher_x) & 0x1F;
                                 let y_index = self.window_y_counter >> 3;
                                 let tile_map_idx =
                                     ((y_index as u16) << 5) | (x_index as u16 & 0x1F);
