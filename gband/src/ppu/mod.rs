@@ -487,7 +487,15 @@ impl Ppu {
                                     fine_y = sprite_size - fine_y;
                                 }
 
-                                self.read_obj_tile(state.tile_idx, fine_y << 1)
+                                // For 8x16 sprites, get the right index
+                                let tile_id = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE)
+                                {
+                                    (state.tile_idx & 0xFE) | ((fine_y & 0x08) >> 3)
+                                } else {
+                                    state.tile_idx
+                                };
+
+                                self.read_obj_tile(tile_id, fine_y << 1)
                             } else {
                                 let row = if state.is_window {
                                     // For sprite, we select using the internal window Y counter
