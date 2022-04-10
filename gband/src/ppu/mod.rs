@@ -180,7 +180,9 @@ impl Ppu {
             };
         };
 
-        self.render(bus);
+        if self.lcd_control_reg.contains(LcdControl::LCD_PPU_ENABLE) {
+            self.render(bus);
+        }
     }
 
     pub fn ready_frame(&mut self) -> Option<Frame> {
@@ -715,7 +717,7 @@ fn allocate_new_frame() -> Frame {
     unsafe {
         // Safety: allocated vector has the right size for a frame array
         // (that is `FRAME_WIDTH * FRAME_HEIGHT`)
-        let v: Vec<u8> = vec![0u8; FRAME_WIDTH * FRAME_HEIGHT * 4];
+        let v: Vec<u8> = vec![0xFF; FRAME_WIDTH * FRAME_HEIGHT * 4];
         Box::from_raw(
             Box::into_raw(v.into_boxed_slice()) as *mut [u8; FRAME_WIDTH * FRAME_HEIGHT * 4]
         )
