@@ -16,13 +16,25 @@ pub struct OamScanState {
 #[derive(Clone, Copy, Default)]
 pub struct DrawingState {
     pub pixel_fetcher: PixelFetcherState,
-    pub is_window: bool,
     pub cycle: u8,
 
     pub fetcher_x: u8,
+    pub is_window: bool,
+
+    pub is_sprite: bool,
+    pub sprite_idx: u8,
 
     pub tile_idx: u8,
     pub buffer: [u16; 8],
+}
+
+impl DrawingState {
+    pub fn reset(&mut self) {
+        self.pixel_fetcher = Default::default();
+        self.cycle = 0;
+        self.tile_idx = 0;
+        self.buffer = Default::default();
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -30,7 +42,6 @@ pub enum PixelFetcherState {
     GetTile,
     GetTileLow,
     GetTileHigh,
-    Sleep,
     Push,
 }
 
