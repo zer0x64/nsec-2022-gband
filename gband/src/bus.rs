@@ -123,13 +123,6 @@ impl CpuBus<'_> {
             }
             0xC000..=0xFDFF => {
                 // WRAM
-                if addr == 0xC001 {
-                    log::info!("Local counter: {data}");
-                } else if addr == 0xC002 {
-                    log::info!("Received counter: {data}");
-                } else if addr == 0xC003 {
-                    log::info!("Comparison result: {data}");
-                }
                 self.write_ram(addr, data)
             }
             0xFE00..=0xFE9F => {

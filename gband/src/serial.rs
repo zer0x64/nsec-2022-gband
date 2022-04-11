@@ -4,11 +4,13 @@ use bitflags::bitflags;
 
 // TODO: Socket PoC stuff, remove later
 extern crate std;
-use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io;
 use std::io::{Read, Write};
 
-const N_CYCLES: u8 = 8;
+const N_BIT_CYCLES: u8 = 8;
+const CPU_CYCLES: u8 = (4194304 / 4 / 8192) as u8;
+const CPU_CYCLES_FAST: u8 = (4194304 / 4 / 262144) as u8;
 
 bitflags! {
     struct ControlRegister: u8 {
@@ -30,11 +32,13 @@ pub struct SerialPort {
     buffer: u8,
     control: ControlRegister,
 
-    cycles: u8,
-    print_buffer: Vec<u8>,
+    freq_downscale_cycle: u8,
+    bit_cycle: u8,
     receive_latch: u8,
 
     // TODO: Socket PoC stuff, remove later
+    retry: bool,
+    print_buffer: Vec<u8>,
     socket_wrapper: SocketWrapper,
 }
 
@@ -46,13 +50,18 @@ impl SerialPort {
     }
 
     pub fn clock(&mut self) -> bool {
-        if self.control.contains(ControlRegister::START) {
-            if self.socket_wrapper.is_enabled() {
-                //log::info!("Run socket");
-                self.run_socket()
+        self.freq_downscale_cycle += 1;
+        if self.freq_downscale_cycle == CPU_CYCLES {
+            self.freq_downscale_cycle = 0;
+
+            if self.control.contains(ControlRegister::START) {
+                if self.socket_wrapper.is_enabled() {
+                    self.run_socket()
+                } else {
+                    self.run_printer()
+                }
             } else {
-                //log::info!("Run printer");
-                self.run_printer()
+                false
             }
         } else {
             false
@@ -60,69 +69,94 @@ impl SerialPort {
     }
 
     fn run_socket(&mut self) -> bool {
-        if self.cycles == 0 {
+        if self.bit_cycle == 0 {
             if !self.socket_wrapper.is_connected() {
-                //log::info!("Socket not connected, trying to connect");
                 self.socket_wrapper.try_connect();
             }
 
             if self.socket_wrapper.is_connected() {
                 if self.control.contains(ControlRegister::MASTER) {
-                    match self.socket_wrapper.send(self.buffer) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            log::error!("Master failed to send: {e}");
-                            self.socket_wrapper.reset_socket();
+                    if !self.retry {
+                        match self.socket_wrapper.send(self.buffer) {
+                            Ok(_) => {}
+                            Err(e) => match e.kind() {
+                                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
+                                    return false;
+                                }
+                                _ => {
+                                    log::error!("Master failed to send: {e}");
+                                    self.socket_wrapper.reset_socket();
+                                }
+                            }
                         }
                     }
 
                     match self.socket_wrapper.recv() {
                         Ok(received) => {
+                            self.retry = false;
                             self.receive_latch = received;
-                            log::info!("Master first cycle, sent {}, received {}", self.buffer, self.receive_latch);
                         }
-                        Err(e) => {
-                            log::error!("Master failed to receive: {e}");
-                            self.socket_wrapper.reset_socket();
+                        Err(e) => match e.kind() {
+                            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
+                                self.retry = true;
+                                return false;
+                            }
+                            _ => {
+                                log::error!("Master failed to receive: {e}");
+                                self.retry = false;
+                                self.socket_wrapper.reset_socket();
+                            }
                         }
                     }
                 } else {
-                    match self.socket_wrapper.recv() {
-                        Ok(received) => {
-                            self.receive_latch = received;
-                        }
-                        Err(e) => {
-                            log::error!("Slave failed to receive: {e}");
-                            self.socket_wrapper.reset_socket();
+                    if !self.retry {
+                        match self.socket_wrapper.recv() {
+                            Ok(received) => {
+                                self.receive_latch = received;
+                            }
+                            Err(e) => match e.kind() {
+                                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
+                                    return false;
+                                }
+                                _ => {
+                                    log::error!("Slave failed to receive: {e}");
+                                    self.socket_wrapper.reset_socket();
+                                }
+                            }
                         }
                     }
 
                     match self.socket_wrapper.send(self.buffer) {
                         Ok(_) => {
-                            log::info!("Slave first cycle, sent {}, received {}", self.buffer, self.receive_latch);
+                            self.retry = false;
                         }
-                        Err(e) => {
-                            log::error!("Slave failed to send: {e}");
-                            self.socket_wrapper.reset_socket();
+                        Err(e) => match e.kind() {
+                            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
+                                self.retry = true;
+                                return false;
+                            }
+                            _ => {
+                                log::error!("Slave failed to send: {e}");
+                                self.retry = false;
+                                self.socket_wrapper.reset_socket();
+                            }
                         }
                     }
                 }
             } else {
-                //log::info!("Should have send, but socket is not connected. Waiting");
                 self.socket_wrapper.reset_socket();
             }
         }
 
         // Increment cycles only if the connection is active
         if self.socket_wrapper.is_connected() {
-            self.cycles += 1;
+            self.bit_cycle += 1;
         }
 
-        if self.cycles == N_CYCLES {
-            self.cycles = 0;
+        if self.bit_cycle == N_BIT_CYCLES {
+            self.bit_cycle = 0;
             self.buffer = self.receive_latch;
             self.control.remove(ControlRegister::START);
-            log::info!("Serial last cycle -- SB: {:x}, SC: {:x}", self.buffer, self.control.bits());
             true
         } else {
             false
@@ -134,7 +168,7 @@ impl SerialPort {
             self.print_buffer.push(self.buffer);
         }
 
-        if self.buffer == 10u8 || self.print_buffer.len() == 128 {
+        if self.buffer == 10u8 || self.print_buffer.len() == 64 {
             if !self.print_buffer.is_empty() {
                 log::info!(
                     "Serial port: {}",
@@ -147,77 +181,8 @@ impl SerialPort {
             }
         }
 
-        self.cycles += 1;
-        if self.cycles == N_CYCLES {
-            self.cycles = 0;
-            //self.buffer = self.receive_latch;
-            self.control.remove(ControlRegister::START);
-            true
-        } else {
-            false
-        }
+        false
     }
-
-    /*fn master(&mut self) {
-        if let Some(socket) = &self.socket {
-            let addr = Self::get_remote_addr(&socket);
-            log::info!("Other's addr: {addr}");
-
-            let send_buf = [self.buffer];
-            socket.send_to(&send_buf, addr).expect("Master failed to send");
-
-            let mut recv_buf = [0u8, 1];
-            let (_, other) = socket.recv_from(&mut recv_buf).expect("Master failed to receive");
-            if other != addr {
-                panic!("Master received a udp packet from someone else: {}", other);
-            }
-
-            self.receive_latch = recv_buf[0];
-        }
-
-        log::info!("Master first cycle, sent {}, received {}", self.buffer, self.receive_latch);
-
-        /*self.cycles += 1;
-        //log::info!("SB: {:x}, SC: {:x}", self.buffer, self.control.bits());
-
-        if self.cycles == N_CYCLES {
-            self.cycles = 0;
-
-            /*if self.buffer == 10u8 {
-                self.print();
-            } else {
-                self.print_buffer.push(self.buffer);
-            }*/
-
-            // send data and receive data
-
-            self.control.remove(ControlRegister::START);
-            log::info!("Sent -- SB: {:x}, SC: {:x}", self.buffer, self.control.bits());
-            true
-        } else {
-            false
-        }*/
-    }
-
-    fn slave(&mut self) {
-        if let Some(socket) = &self.socket {
-            let addr = Self::get_remote_addr(&socket);
-            log::info!("Other's addr: {addr}");
-
-            let mut recv_buf = [0u8, 1];
-            let (_, other) = socket.recv_from(&mut recv_buf).expect("Slave failed to receive");
-            if other != addr {
-                panic!("Slave received a udp packet from someone else: {}", other);
-            }
-
-            self.receive_latch = recv_buf[0];
-
-            let send_buf = [self.buffer];
-            socket.send_to(&send_buf, addr).expect("Slave failed to send");
-        }
-
-        log::info!("Slave first cycle, sent {}, received {}", self.buffer, self.receive_latch);
-    }*/
 
     pub fn set_buffer(&mut self, data: u8) {
         self.buffer = data;
@@ -239,7 +204,6 @@ impl SerialPort {
 // TODO: Socket PoC stuff, remove later
 #[derive(Default)]
 struct SocketWrapper {
-    //socket: Option<UdpSocket>,
     socket: Option<TcpStream>,
     listener: Option<TcpListener>,
     enabled: bool,
@@ -248,43 +212,7 @@ struct SocketWrapper {
 impl SocketWrapper {
     pub fn enable(&mut self) {
         self.enabled = true;
-        /*let addresses = [
-            SocketAddr::from(([127, 0, 0, 1], 8001)),
-            SocketAddr::from(([127, 0, 0, 1], 8002)),
-        ];
-
-        match UdpSocket::bind(&addresses[..]) {
-            Ok(socket) => {
-                self.socket = Some(socket);
-                self.connect();
-            },
-            Err(e) => {
-                log::error!("Failed to create socket: {}", e);
-            }
-        }*/
     }
-
-    // Old UDP code, kept for reference
-    /*pub fn connect(&mut self) {
-        let addresses = [
-            SocketAddr::from(([127, 0, 0, 1], 8001)),
-            SocketAddr::from(([127, 0, 0, 1], 8002)),
-        ];
-
-        if let Some(socket) = &self.socket {
-            let addr = socket.local_addr().unwrap();
-            let remote = if addresses[0] == addr {
-                addresses[1]
-            } else {
-                addresses[0]
-            };
-
-            socket.connect(remote).unwrap();
-
-            log::info!("Socket bound to {}", socket.local_addr().unwrap());
-            log::info!("Socket connected to {}", socket.peer_addr().unwrap());
-        }
-    }*/
 
     pub fn try_connect(&mut self) {
         let host_addr = SocketAddr::from(([127, 0, 0, 1], 8001));
@@ -302,7 +230,7 @@ impl SocketWrapper {
                     match TcpStream::connect_timeout(&host_addr, Duration::from_millis(100)) {
                         Ok(socket) => {
                             log::info!("Connected");
-                            //socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+                            socket.set_nonblocking(true).unwrap();
                             self.socket = Some(socket)
                         },
                         Err(e) => log::error!("Failed to connect: {}", e)
@@ -317,17 +245,14 @@ impl SocketWrapper {
         // If we are the listener, try to accept. If no one is there, try another time
         if self.socket.is_none() {
             if let Some(listener) = &self.listener {
-                //log::info!("Accepting");
                 match listener.accept() {
                     Ok((socket, _)) => {
                         log::info!("Accepted");
-                        socket.set_nonblocking(false).unwrap();
-                        //socket.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+                        socket.set_nonblocking(true).unwrap();
                         self.socket = Some(socket);
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         // Do nothing, this is fine
-                        //log::info!("No one is here");
                     }
                     Err(e) => {
                         log::error!("Accept failed: {}", e);
@@ -345,17 +270,14 @@ impl SocketWrapper {
         match &self.socket {
             Some(socket) => {
                 let mut dummy = [0u8];
-                socket.set_nonblocking(true).unwrap();
                 let connected = match socket.peek(&mut dummy) {
                     Ok(_) => true,
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => true,
-                    //Err(e) if e.kind() == io::ErrorKind::TimedOut => true,
                     Err(e) => {
                         log::error!("is_connected peek error: {}", e);
                         false
                     },
                 };
-                socket.set_nonblocking(false);
 
                 connected
             },
@@ -370,7 +292,6 @@ impl SocketWrapper {
     pub fn send(&mut self, byte: u8) -> io::Result<()> {
         if let Some(socket) = &mut self.socket {
             let send_buf = [byte];
-            //socket.send(&send_buf)?;
             socket.write(&send_buf)?;
             Ok(())
         } else {
@@ -381,7 +302,6 @@ impl SocketWrapper {
     pub fn recv(&mut self) -> io::Result<u8> {
         if let Some(socket) = &mut self.socket {
             let mut recv_buf = [0u8];
-            //socket.recv(&mut recv_buf)?;
             socket.read(&mut recv_buf)?;
             Ok(recv_buf[0])
         } else {
