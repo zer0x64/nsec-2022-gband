@@ -67,6 +67,8 @@ impl Emulator {
     pub fn new(rom: &[u8], save_data: Option<&[u8]>) -> Result<Self, RomParserError> {
         let cartridge = Cartridge::load(rom, save_data)?;
         let cgb_mode = cartridge.is_cgb();
+        let mut ppu = Ppu::new();
+        ppu.set_dmg_colorized_palette(&cartridge.header.title);
 
         let emulator = Self {
             cartridge,
