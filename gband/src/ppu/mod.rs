@@ -538,11 +538,10 @@ impl Ppu {
                     let sprite_palette = (sprite_pixel as usize & 0x10) >> 4;
                     let bg_over_obj = (sprite_pixel & 0x80) == 0x80;
 
-                    let pixel = if !self.lcd_control_reg.contains(LcdControl::OBJ_ENABLE)
-                        || (sprite_pixel & 3 == 0)
+                    let pixel = if (sprite_pixel & 3 == 0)
                         || (bg_over_obj && (background_pixel & 3 != 0))
                     {
-                        // Pixel is transparent, under the background or LCDC.1 is disabled. Rendering background instead
+                        // Pixel is transparent or under the background. Rendering background instead
                         // Index the pixel in the palette
                         if self
                             .lcd_control_reg
@@ -552,7 +551,8 @@ impl Ppu {
                                 & 0x3
                         } else {
                             // Very simple and potentially incomplete implementation of LCDC.0 for DMG. For CGB, there should be more to do as well.
-                            self.greyscale_bg_palette & 0x3
+                            // 0 here means white
+                            0
                         }
                     } else {
                         // Renderng the sprite pixel
@@ -566,10 +566,10 @@ impl Ppu {
                     if base + 3 < self.frame.len() {
                         // Convert to RGBA
                         let greyscale = !(pixel as u8 & 3) << 6;
-                        self.frame[base] = greyscale;
-                        self.frame[base + 1] = greyscale;
-                        self.frame[base + 2] = greyscale;
-                        self.frame[base + 3] = greyscale;
+                        self.frame[base..base + 3].fill(greyscale);
+
+                        // Alpha channel
+                        self.frame[base + 3] = 0xff;
 
                         self.x += 1;
 
@@ -669,7 +669,7 @@ impl Ppu {
                 7
             };
 
-            let mut fine_y = self
+            let mut row = self
                 .y
                 .wrapping_sub(self.secondary_oam[state.sprite_idx as usize])
                 .wrapping_add(16)
@@ -677,17 +677,17 @@ impl Ppu {
 
             // Y flip
             if self.secondary_oam[(state.sprite_idx + 3) as usize] & 0x40 > 0 {
-                fine_y = sprite_size - fine_y;
+                row = sprite_size - row;
             }
 
             // For 8x16 sprites, get the right index
             let tile_id = if self.lcd_control_reg.contains(LcdControl::OBJ_SIZE) {
-                (state.tile_idx & 0xFE) | ((fine_y & 0x08) >> 3)
+                (state.tile_idx & 0xFE) | ((row & 0x08) >> 3)
             } else {
                 state.tile_idx
             };
 
-            self.read_obj_tile(tile_id, (fine_y << 1) | plane)
+            self.read_obj_tile(tile_id, (row << 1) | plane)
         } else {
             let row = if state.is_window {
                 // For sprite, we select using the internal window Y counter
