@@ -37,7 +37,7 @@ pub struct SerialPort {
     receive_latch: u8,
 
     // TODO: Socket PoC stuff, remove later
-    retry: bool,
+    skip_handshake: bool,
     print_buffer: Vec<u8>,
     socket_wrapper: SocketWrapper,
 }
@@ -49,6 +49,8 @@ impl SerialPort {
         self.socket_wrapper.enable();
     }
 
+    /// Clock the serial port module.
+    /// Returns a bool indicating whether an interrupt is triggered or not
     pub fn clock(&mut self) -> bool {
         self.freq_downscale_cycle += 1;
         if self.freq_downscale_cycle == CPU_CYCLES {
@@ -76,70 +78,54 @@ impl SerialPort {
 
             if self.socket_wrapper.is_connected() {
                 if self.control.contains(ControlRegister::MASTER) {
-                    if !self.retry {
+                    if !self.skip_handshake {
                         match self.socket_wrapper.send(self.buffer) {
                             Ok(_) => {}
-                            Err(e) => match e.kind() {
-                                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
-                                    return false;
-                                }
-                                _ => {
-                                    log::error!("Master failed to send: {e}");
-                                    self.socket_wrapper.reset_socket();
-                                }
+                            Err(e) => {
+                                log::error!("Master failed to send: {e}");
+                                self.socket_wrapper.reset_socket();
                             }
                         }
                     }
 
                     match self.socket_wrapper.recv() {
                         Ok(received) => {
-                            self.retry = false;
+                            self.skip_handshake = false;
                             self.receive_latch = received;
                         }
                         Err(e) => match e.kind() {
                             io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
-                                self.retry = true;
+                                self.skip_handshake = true;
                                 return false;
                             }
                             _ => {
                                 log::error!("Master failed to receive: {e}");
-                                self.retry = false;
+                                self.skip_handshake = false;
                                 self.socket_wrapper.reset_socket();
                             }
                         }
                     }
                 } else {
-                    if !self.retry {
-                        match self.socket_wrapper.recv() {
-                            Ok(received) => {
-                                self.receive_latch = received;
+                    match self.socket_wrapper.recv() {
+                        Ok(received) => {
+                            self.receive_latch = received;
+                        }
+                        Err(e) => match e.kind() {
+                            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
+                                return false;
                             }
-                            Err(e) => match e.kind() {
-                                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
-                                    return false;
-                                }
-                                _ => {
-                                    log::error!("Slave failed to receive: {e}");
-                                    self.socket_wrapper.reset_socket();
-                                }
+                            _ => {
+                                log::error!("Slave failed to receive: {e}");
+                                self.socket_wrapper.reset_socket();
                             }
                         }
                     }
 
                     match self.socket_wrapper.send(self.buffer) {
-                        Ok(_) => {
-                            self.retry = false;
-                        }
-                        Err(e) => match e.kind() {
-                            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => {
-                                self.retry = true;
-                                return false;
-                            }
-                            _ => {
-                                log::error!("Slave failed to send: {e}");
-                                self.retry = false;
-                                self.socket_wrapper.reset_socket();
-                            }
+                        Ok(_) => {}
+                        Err(e) => {
+                            log::error!("Slave failed to send: {e}");
+                            self.socket_wrapper.reset_socket();
                         }
                     }
                 }
@@ -148,9 +134,12 @@ impl SerialPort {
             }
         }
 
-        // Increment cycles only if the connection is active
+        // Increment "bits transferred" cycles only if the connection is still active
         if self.socket_wrapper.is_connected() {
             self.bit_cycle += 1;
+        } else {
+            self.socket_wrapper.reset_socket();
+            self.bit_cycle = 0;
         }
 
         if self.bit_cycle == N_BIT_CYCLES {
