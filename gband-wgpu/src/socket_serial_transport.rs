@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
-struct SocketSerialTransport {
+pub struct SocketSerialTransport {
     address: SocketAddr,
 
     socket_type: SocketType,
@@ -141,7 +141,8 @@ impl SerialTransport for SocketSerialTransport {
             let send_buf = [data];
 
             if let Err(e) = socket.write(&send_buf) {
-                log::warn!("Couldn't write to the socket: {e}")
+                log::warn!("Couldn't write to the socket: {e}");
+                self.reset();
             };
         } else {
             log::warn!("Tried to write to a closed socket!")
@@ -158,6 +159,7 @@ impl SerialTransport for SocketSerialTransport {
                     io::ErrorKind::WouldBlock => None,
                     _ => {
                         log::warn!("Failed to receive from the socket! {e}");
+                        self.reset();
 
                         None
                     }

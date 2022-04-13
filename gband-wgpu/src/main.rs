@@ -6,6 +6,7 @@ use wgpu::util::DeviceExt;
 use std::{
     fs::OpenOptions,
     io::{Read, Write},
+    net::SocketAddr,
     path::Path,
     sync::{atomic::AtomicBool, mpsc::Sender, Arc},
     thread::JoinHandle,
@@ -30,6 +31,12 @@ struct Opt {
 
     #[structopt(default_value = "info", short, long)]
     log_level: String,
+
+    #[structopt(short = "s", long, group = "serial")]
+    server: Option<SocketAddr>,
+
+    #[structopt(short = "c", long, group = "serial")]
+    client: Option<SocketAddr>,
 }
 
 mod debugger;
@@ -534,7 +541,20 @@ fn main() {
     };
 
     // Create the emulator
-    let emulator = Emulator::new(&rom, save_file).expect("Rom parsing failed");
+    let mut emulator = Emulator::new(&rom, save_file).expect("Rom parsing failed");
+
+    // Create serial link
+    let serial_transport: Box<dyn gband::SerialTransport> = match (opt.client, opt.server) {
+        (Some(addr), _) => Box::new(socket_serial_transport::SocketSerialTransport::new(
+            addr, false,
+        )),
+        (_, Some(addr)) => Box::new(socket_serial_transport::SocketSerialTransport::new(
+            addr, true,
+        )),
+        _ => Box::new(gband::NullSerialTransport),
+    };
+
+    emulator.set_serial(serial_transport);
 
     // Wait until WGPU is ready
     let mut state = block_on(State::new(&window, emulator, opt.start_paused));
