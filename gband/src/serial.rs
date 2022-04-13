@@ -1,12 +1,14 @@
-use alloc::vec::Vec;
-use core::time::Duration;
+use alloc::boxed::Box;
 use bitflags::bitflags;
+use core::time::Duration;
+
+use crate::{NullSerialTransport, SerialTransport};
 
 // TODO: Socket PoC stuff, remove later
 extern crate std;
-use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io;
 use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 
 const N_BIT_CYCLES: u8 = 8;
 const CPU_CYCLES: u8 = (4194304 / 4 / 8192) as u8;
@@ -27,7 +29,6 @@ impl Default for ControlRegister {
     }
 }
 
-#[derive(Default)]
 pub struct SerialPort {
     buffer: u8,
     control: ControlRegister,
@@ -38,17 +39,27 @@ pub struct SerialPort {
 
     // TODO: Socket PoC stuff, remove later
     skip_handshake: bool,
-    print_buffer: Vec<u8>,
     socket_wrapper: SocketWrapper,
+
+    serial_transport: Box<dyn SerialTransport>,
+}
+
+impl Default for SerialPort {
+    fn default() -> Self {
+        Self {
+            buffer: Default::default(),
+            control: Default::default(),
+            freq_downscale_cycle: Default::default(),
+            bit_cycle: Default::default(),
+            receive_latch: Default::default(),
+            skip_handshake: Default::default(),
+            socket_wrapper: Default::default(),
+            serial_transport: Box::new(NullSerialTransport),
+        }
+    }
 }
 
 impl SerialPort {
-    // TODO: Socket PoC stuff, remove later
-    // Exists to make only the emu create it, not the tests and benchmark
-    pub fn enable_socket(&mut self) {
-        self.socket_wrapper.enable();
-    }
-
     /// Clock the serial port module.
     /// Returns a bool indicating whether an interrupt is triggered or not
     pub fn clock(&mut self) -> bool {
@@ -57,17 +68,17 @@ impl SerialPort {
             self.freq_downscale_cycle = 0;
 
             if self.control.contains(ControlRegister::START) {
-                if self.socket_wrapper.is_enabled() {
-                    self.run_socket()
-                } else {
-                    self.run_printer()
-                }
+                self.run_socket()
             } else {
                 false
             }
         } else {
             false
         }
+    }
+
+    pub fn set_serial(&mut self, serial: alloc::boxed::Box<dyn SerialTransport>) {
+        self.serial_transport = serial
     }
 
     fn run_socket(&mut self) -> bool {
@@ -103,7 +114,7 @@ impl SerialPort {
                                 self.skip_handshake = false;
                                 self.socket_wrapper.reset_socket();
                             }
-                        }
+                        },
                     }
                 } else {
                     match self.socket_wrapper.recv() {
@@ -118,7 +129,7 @@ impl SerialPort {
                                 log::error!("Slave failed to receive: {e}");
                                 self.socket_wrapper.reset_socket();
                             }
-                        }
+                        },
                     }
 
                     match self.socket_wrapper.send(self.buffer) {
@@ -152,27 +163,6 @@ impl SerialPort {
         }
     }
 
-    fn run_printer(&mut self) -> bool {
-        if self.buffer != 10u8 {
-            self.print_buffer.push(self.buffer);
-        }
-
-        if self.buffer == 10u8 || self.print_buffer.len() == 64 {
-            if !self.print_buffer.is_empty() {
-                log::info!(
-                    "Serial port: {}",
-                    self.print_buffer
-                        .iter()
-                        .flat_map(|c| (*c as char).escape_default())
-                        .collect::<alloc::string::String>()
-                );
-                self.print_buffer.clear();
-            }
-        }
-
-        false
-    }
-
     pub fn set_buffer(&mut self, data: u8) {
         self.buffer = data;
     }
@@ -199,10 +189,6 @@ struct SocketWrapper {
 }
 
 impl SocketWrapper {
-    pub fn enable(&mut self) {
-        self.enabled = true;
-    }
-
     pub fn try_connect(&mut self) {
         let host_addr = SocketAddr::from(([127, 0, 0, 1], 8001));
 
@@ -221,8 +207,8 @@ impl SocketWrapper {
                             log::info!("Connected");
                             socket.set_nonblocking(true).unwrap();
                             self.socket = Some(socket)
-                        },
-                        Err(e) => log::error!("Failed to connect: {}", e)
+                        }
+                        Err(e) => log::error!("Failed to connect: {}", e),
                     }
                 }
                 Err(e) => {
@@ -251,10 +237,6 @@ impl SocketWrapper {
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
     pub fn is_connected(&mut self) -> bool {
         match &self.socket {
             Some(socket) => {
@@ -265,11 +247,11 @@ impl SocketWrapper {
                     Err(e) => {
                         log::error!("is_connected peek error: {}", e);
                         false
-                    },
+                    }
                 };
 
                 connected
-            },
+            }
             None => false,
         }
     }

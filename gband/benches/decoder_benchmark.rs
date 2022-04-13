@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use gband::{
     borrow_cpu_bus, Cartridge, CgbDoubleSpeed, Cpu, InterruptState, JoypadState, OamDma, Ppu,
-    RomParserError, SerialPort, TimerRegisters
+    RomParserError, SerialPort, TimerRegisters,
 };
 use std::time::Duration;
 

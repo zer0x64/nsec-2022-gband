@@ -34,6 +34,7 @@ struct Opt {
 
 mod debugger;
 mod emulation_thread;
+mod socket_serial_transport;
 
 // This maps the keyboard input to a controller input
 fn winit_to_gband_input(keycode: &VirtualKeyCode) -> Result<JoypadState, ()> {

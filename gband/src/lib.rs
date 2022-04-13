@@ -14,6 +14,7 @@ mod oam_dma;
 mod ppu;
 mod rgb_palette;
 mod serial;
+mod serial_transport;
 mod timer_regs;
 pub mod utils;
 
@@ -23,12 +24,13 @@ pub use cpu::Cpu;
 pub use interrupt::{InterruptReg, InterruptState};
 pub use joypad_state::JoypadState;
 pub use ppu::{Frame, Ppu, FRAME_HEIGHT, FRAME_WIDTH};
+pub use serial_transport::*;
 
 // TODO: Revert pub added for criterion
 pub use cartridge::Cartridge;
 pub use oam_dma::OamDma;
-pub use timer_regs::TimerRegisters;
 pub use serial::SerialPort;
+pub use timer_regs::TimerRegisters;
 
 const WRAM_BANK_SIZE: u16 = 0x1000; // 4KiB
 
@@ -66,10 +68,6 @@ impl Emulator {
         let cartridge = Cartridge::load(rom, save_data)?;
         let cgb_mode = cartridge.is_cgb();
 
-        // TODO: Socket PoC stuff, remove later
-        let mut serial_port = SerialPort::default();
-        serial_port.enable_socket();
-
         let emulator = Self {
             cartridge,
             cpu: Default::default(),
@@ -84,7 +82,7 @@ impl Emulator {
             ppu: Ppu::new(),
             cgb_mode,
 
-            serial_port,
+            serial_port: Default::default(),
 
             joypad_state: Default::default(),
             joypad_register: Default::default(),
@@ -117,6 +115,10 @@ impl Emulator {
 
         // Return a frame if available
         self.ppu.ready_frame()
+    }
+
+    pub fn set_serial(&mut self, serial: alloc::boxed::Box<dyn SerialTransport>) {
+        self.serial_port.set_serial(serial)
     }
 
     pub fn set_joypad(&mut self, state: JoypadState) {
