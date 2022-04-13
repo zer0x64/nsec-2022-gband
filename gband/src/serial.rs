@@ -66,7 +66,7 @@ impl SerialPort {
             self.freq_downscale_cycle = 0;
 
             if self.control.contains(ControlRegister::START) {
-                self.run_socket()
+                self.run_transfer()
             } else {
                 false
             }
@@ -79,10 +79,11 @@ impl SerialPort {
         self.serial_transport = serial
     }
 
-    fn run_socket(&mut self) -> bool {
+    fn run_transfer(&mut self) -> bool {
         if self.bit_cycle == 0 {
             if !self.serial_transport.is_connected() {
                 self.serial_transport.connect();
+                self.skip_send = false;
             }
 
             if self.serial_transport.is_connected() {
