@@ -11,7 +11,7 @@ fn dmg_acid2() {
 
     let mut emulator = gband::Emulator::new(dmg_acid2_rom, None).expect("Invalid Rom!");
 
-    // Skip a few frame
+    // Skip a few frames
     for _ in 0..10 {
         loop {
             if let Some(_) = emulator.clock() {
