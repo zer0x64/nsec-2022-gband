@@ -1,11 +1,14 @@
+// Our palettes implementation is based on code written by ITotalJustice for his project TotalGB.
+// https://github.com/ITotalJustice/TotalGB/blob/master/src/core/tables/palette_table.c
+
 struct PaletteHashEntry {
     pub table: u8,
     pub entry: u8,
     pub hash: u8,
-    pub forth: u8,
+    pub fourth: u8,
 }
 
-// [r, g, b]
+// [R, G, B]
 const PALETTE_TABLE_0: [[[[u8; 3]; 4]; 3]; 29] = [
     [
         [ [0xFF, 0xFF, 0xFF], [0xAD, 0xAD, 0x84], [0x42, 0x73, 0x7B], [0x00, 0x00, 0x00] ],
@@ -496,7 +499,7 @@ const PALETTE_TABLE_3: [[[[u8; 3]; 4]; 3]; 29] = [
         [ [0xFF, 0x63, 0x52], [0xD6, 0x00, 0x00], [0x63, 0x00, 0x00], [0x00, 0x00, 0x00] ],
         [ [0xFF, 0x63, 0x52], [0xD6, 0x00, 0x00], [0x63, 0x00, 0x00], [0x00, 0x00, 0x00] ]
     ],
-    [ // mario land?
+    [
         [ [0xFF, 0xFF, 0xCE], [0x63, 0xEF, 0xEF], [0x9C, 0x84, 0x31], [0x5A, 0x5A, 0x5A] ],
         [ [0xFF, 0xFF, 0xFF], [0xFF, 0x73, 0x00], [0x94, 0x42, 0x00], [0x00, 0x00, 0x00] ],
         [ [0xFF, 0xFF, 0xFF], [0xFF, 0x73, 0x00], [0x94, 0x42, 0x00], [0x00, 0x00, 0x00] ]
@@ -913,13 +916,13 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x0,
         entry: 0x06,
         hash: 0x71,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x06,
         hash: 0xFF,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Pocket Monsters - Pikachu (Japan) (Rev 0A) */
     /* Pocket Monsters - Pikachu (Japan) (Rev B) */
@@ -931,20 +934,20 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x0,
         entry: 0x07,
         hash: 0x15,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x07,
         hash: 0xDB,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Alleyway (World) */
     PaletteHashEntry {
         table: 0x0,
         entry: 0x08,
         hash: 0x88,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* F-1 Race (World) */
     /* F-1 Race (World) (Rev A) */
@@ -961,49 +964,49 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x0,
         entry: 0x12,
         hash: 0x0C,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0x16,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0x35,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0x67,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0x75,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0x92,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0x99,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x12,
         hash: 0xB7,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Arcade Classic No. 3 - Galaga & Galaxian (USA) */
     /* Solar Striker (World) */
@@ -1013,33 +1016,33 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x0,
         entry: 0x13,
         hash: 0x28,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x13,
         hash: 0xA5,
-        forth: 0x41,
+        fourth: 0x41,
     },
     PaletteHashEntry {
         table: 0x0,
         entry: 0x13,
         hash: 0xE8,
-        forth: 0x41,
+        fourth: 0x41,
     },
     /* x (Japan) */
     PaletteHashEntry {
         table: 0x0,
         entry: 0x16,
         hash: 0x58,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Pocket Camera (Japan) (Rev A) */
     PaletteHashEntry {
         table: 0x0,
         entry: 0x1B,
         hash: 0x6F,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Radar Mission (Japan) */
     /* Radar Mission (USA, Europe) */
@@ -1047,7 +1050,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x1,
         entry: 0x00,
         hash: 0x8C,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Pocket Monsters Ao (Japan) */
     /* Pokemon - Blaue Edition (Germany) */
@@ -1059,14 +1062,14 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x1,
         entry: 0x0B,
         hash: 0x61,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Kaeru no Tame ni Kane wa Naru (Japan) */
     PaletteHashEntry {
         table: 0x1,
         entry: 0x0D,
         hash: 0xD3,
-        forth: 0x52,
+        fourth: 0x52,
     },
     /* Game Boy Camera Gold (USA) */
     /* Pocket Monsters Aka (Japan) */
@@ -1080,7 +1083,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x1,
         entry: 0x10,
         hash: 0x14,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* James Bond 007 (USA, Europe) */
     /* Pocket Monsters Midori (Japan) */
@@ -1089,7 +1092,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x1,
         entry: 0x1C,
         hash: 0xAA,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Dr. Mario (World) */
     /* Dr. Mario (World) (Rev A) */
@@ -1097,14 +1100,14 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x2,
         entry: 0x0B,
         hash: 0x3C,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Pinocchio (Europe) */
     PaletteHashEntry {
         table: 0x2,
         entry: 0x0C,
         hash: 0x9C,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Moguranya (Japan) */
     /* Mole Mania (USA, Europe) */
@@ -1112,7 +1115,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x00,
         hash: 0xB3,
-        forth: 0x55,
+        fourth: 0x55,
     },
     /* Game & Watch Gallery (Europe) */
     /* Game & Watch Gallery (USA) */
@@ -1124,19 +1127,19 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x04,
         hash: 0x34,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x04,
         hash: 0x66,
-        forth: 0x45,
+        fourth: 0x45,
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x04,
         hash: 0xF4,
-        forth: 0x20,
+        fourth: 0x20,
     },
     /* Mario & Yoshi (Europe) */
     /* Yoshi (USA) */
@@ -1145,13 +1148,13 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x05,
         hash: 0x3D,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x05,
         hash: 0x6A,
-        forth: 0x49,
+        fourth: 0x49,
     },
     /* Donkey Kong (World) */
     /* Donkey Kong (World) (Rev A) */
@@ -1159,7 +1162,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x06,
         hash: 0x19,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Kirby no Pinball (Japan) */
     /* Kirby's Pinball Land (USA, Europe) */
@@ -1167,7 +1170,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x08,
         hash: 0x1D,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Super Mario Land (World) */
     /* Super Mario Land (World) (Rev A) */
@@ -1175,21 +1178,21 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x0A,
         hash: 0x46,
-        forth: 0x45,
+        fourth: 0x45,
     },
     /* Pocket Bomberman (Europe) */
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0C,
         hash: 0x0D,
-        forth: 0x45,
+        fourth: 0x45,
     },
     /* Kid Icarus - Of Myths and Monsters (USA, Europe) */
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0D,
         hash: 0xBF,
-        forth: 0x20,
+        fourth: 0x20,
     },
     /* Arcade Classic No. 1 - Asteroids & Missile Command (USA, Europe) */
     /* Golf (World) */
@@ -1200,31 +1203,31 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x0E,
         hash: 0x28,
-        forth: 0x46,
+        fourth: 0x46,
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0E,
         hash: 0x4B,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0E,
         hash: 0x90,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0E,
         hash: 0x9A,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0E,
         hash: 0xBD,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Chessmaster, The (Europe) */
     /* Dynablaster (Europe) */
@@ -1233,26 +1236,26 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x0F,
         hash: 0x39,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0F,
         hash: 0x43,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x0F,
         hash: 0x97,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Battletoads in Ragnarok's World (Europe) */
     PaletteHashEntry {
         table: 0x3,
         entry: 0x12,
         hash: 0xA5,
-        forth: 0x52,
+        fourth: 0x52,
     },
     /* Arcade Classic No. 2 - Centipede & Millipede (USA, Europe) */
     /* Ken Griffey Jr. presents Major League Baseball (USA, Europe) */
@@ -1262,31 +1265,31 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x3,
         entry: 0x1C,
         hash: 0x00,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x1C,
         hash: 0x18,
-        forth: 0x49,
+        fourth: 0x49,
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x1C,
         hash: 0x3F,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x1C,
         hash: 0x66,
-        forth: 0x4C,
+        fourth: 0x4C,
     },
     PaletteHashEntry {
         table: 0x3,
         entry: 0x1C,
         hash: 0xC6,
-        forth: 0x20,
+        fourth: 0x20,
     },
     /* Tetris Attack (USA) */
     /* Tetris Attack (USA, Europe) (Rev A) */
@@ -1295,13 +1298,13 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x4,
         entry: 0x05,
         hash: 0x95,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x4,
         entry: 0x05,
         hash: 0xB3,
-        forth: 0x52,
+        fourth: 0x52,
     },
     /* Yoshi no Cookie (Japan) */
     /* Yoshi's Cookie (USA, Europe) */
@@ -1309,13 +1312,13 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x4,
         entry: 0x06,
         hash: 0x3E,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x4,
         entry: 0x06,
         hash: 0xE0,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Qix (World) */
     /* Tetris 2 (Europe) */
@@ -1325,19 +1328,19 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x4,
         entry: 0x07,
         hash: 0x0D,
-        forth: 0x52,
+        fourth: 0x52,
     },
     PaletteHashEntry {
         table: 0x4,
         entry: 0x07,
-        hash: 0x69, // ayyyy,
-        forth: 0x00, 
+        hash: 0x69,
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x4,
         entry: 0x07,
         hash: 0xF2,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Game Boy Wars (Japan) */
     /* Wario Land - Super Mario Land 3 (World) */
@@ -1345,13 +1348,13 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x00,
         hash: 0x59,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x00,
         hash: 0xC6,
-        forth: 0x41,
+        fourth: 0x41,
     },
     /* Donkey Kong Land (USA, Europe) */
     /* Super Donkey Kong GB (Japan) */
@@ -1359,13 +1362,13 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x01,
         hash: 0x86,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x01,
         hash: 0xA8,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Soccer (Europe) (En,Fr,De) */
     /* Tennis (World) */
@@ -1375,32 +1378,32 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x02,
         hash: 0xBF,
-        forth: 0x43,
+        fourth: 0x43,
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x02,
         hash: 0xCE,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x02,
         hash: 0xD1,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x02,
         hash: 0xF0,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Baseball (World) */
     PaletteHashEntry {
         table: 0x5,
         entry: 0x03,
         hash: 0x36,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Hoshi no Kirby (Japan) */
     /* Hoshi no Kirby (Japan) (Rev A) */
@@ -1413,25 +1416,25 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x08,
         hash: 0x27,
-        forth: 0x42,
+        fourth: 0x42,
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x08,
         hash: 0x49,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x08,
         hash: 0x5C,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x08,
         hash: 0xB3,
-        forth: 0x42,
+        fourth: 0x42,
     },
     /* Super Mario Land 2 - 6 Golden Coins (USA, Europe) */
     /* Super Mario Land 2 - 6 Golden Coins (USA, Europe) (Rev A) */
@@ -1442,14 +1445,14 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x09,
         hash: 0xC9,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Wave Race (USA, Europe) */
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0B,
         hash: 0x4E,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Donkey Kong Land (Japan) */
     /* Donkey Kong Land 2 (USA, Europe) */
@@ -1459,26 +1462,26 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x0C,
         hash: 0x18,
-        forth: 0x4B,
+        fourth: 0x4B,
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0C,
         hash: 0x6A,
-        forth: 0x4B,
+        fourth: 0x4B,
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0C,
         hash: 0x6B,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Killer Instinct (USA, Europe) */
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0D,
         hash: 0x9D,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Magnetic Soccer (Europe) */
     /* Mystic Quest (Europe) */
@@ -1490,25 +1493,25 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x0E,
         hash: 0x17,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0E,
         hash: 0x27,
-        forth: 0x4E,
+        fourth: 0x4E,
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0E,
         hash: 0x61,
-        forth: 0x41,
+        fourth: 0x41,
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0E,
         hash: 0x8B,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Adventures of Lolo (Europe) */
     /* Arcade Classic No. 4 - Defender & Joust (USA, Europe) */
@@ -1523,49 +1526,49 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x0F,
         hash: 0x01,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0x10,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0x29,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0x52,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0x5D,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0x68,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0x6D,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x0F,
         hash: 0xF6,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Legend of Zelda, The - Link's Awakening (France) */
     /* Legend of Zelda, The - Link's Awakening (Germany) */
@@ -1578,7 +1581,7 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x11,
         hash: 0x70,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Boy and His Blob in the Rescue of Princess Blobette, A (Europe) */
     /* Star Wars (USA, Europe) (Rev A) */
@@ -1586,34 +1589,34 @@ const PALETTE_HASH_ENTRIES: [PaletteHashEntry; 94] = [
         table: 0x5,
         entry: 0x12,
         hash: 0xA2,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     PaletteHashEntry {
         table: 0x5,
         entry: 0x12,
         hash: 0xF7,
-        forth: 0x00, 
+        fourth: 0x00, 
     },
     /* Metroid II - Return of Samus (World) */
     PaletteHashEntry {
         table: 0x5,
         entry: 0x14,
         hash: 0x46,
-        forth: 0x52
+        fourth: 0x52
     },
     /* Wario Land II (USA, Europe) */
     PaletteHashEntry {
         table: 0x5,
         entry: 0x15,
         hash: 0xD3,
-        forth: 0x49
+        fourth: 0x49
     },
     /* Pac-In-Time (USA) */
     PaletteHashEntry {
         table: 0x5,
         entry: 0x1C,
         hash: 0xF4,
-        forth: 0x2D
+        fourth: 0x2D
     },
 ];
 
@@ -1625,12 +1628,12 @@ fn palette_fill_from_table_entry (table: usize, entry: usize) -> [[[u8; 3]; 4]; 
     }
 }
 
-pub fn palette_fill_from_hash(hash: u8, forth_byte: u8) -> [[[u8; 3]; 4]; 3] {
+pub fn palette_fill_from_hash(hash: u8, fourth_byte: u8) -> [[[u8; 3]; 4]; 3] {
     for i in 0..PALETTE_HASH_ENTRIES.len() - 1 {
         if hash == PALETTE_HASH_ENTRIES[i].hash {
             // some hashes collide, so the 4th byte of the title is used
-            // luckily, all entries that collide has a non-zero 4th byte
-            if PALETTE_HASH_ENTRIES[i].forth == 0 || forth_byte == PALETTE_HASH_ENTRIES[i].forth {
+            // luckily, all entries that collide have a non-zero 4th byte
+            if PALETTE_HASH_ENTRIES[i].fourth == 0 || fourth_byte == PALETTE_HASH_ENTRIES[i].fourth {
                 return palette_fill_from_table_entry(
                     PALETTE_HASH_ENTRIES[i].table as usize,
                     PALETTE_HASH_ENTRIES[i].entry as usize
