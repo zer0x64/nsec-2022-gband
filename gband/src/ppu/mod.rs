@@ -9,6 +9,7 @@ mod fifo_mode;
 mod lcd_control;
 mod lcd_status;
 mod pixel_fifo;
+mod palette_table;
 
 use cgb_palette::CgbPalette;
 use fifo_mode::FifoMode;
@@ -130,34 +131,11 @@ impl Ppu {
     pub fn set_dmg_colorized_palette(&mut self, title: &[u8; 16]) {
         let hash: Wrapping<u8> = title.iter().map(|x| Wrapping(*x)).sum();
 
-        let palettes = match hash {
-            _ => {
-                (
-                    [
-                        [0xFF, 0xFF, 0xFF],
-                        [0x7B, 0xFF, 0x31],
-                        [0x00, 0x63, 0xC5],
-                        [0x00, 0x00, 0x00],
-                    ], 
-                    [
-                        [0xFF, 0xFF, 0xFF],
-                        [0xFF, 0x84, 0x84],
-                        [0x94, 0x3A, 0x3A],
-                        [0x00, 0x00, 0x00],
-                    ],
-                    [
-                        [0xFF, 0xFF, 0xFF],
-                        [0xFF, 0x84, 0x84],
-                        [0x94, 0x3A, 0x3A],
-                        [0x00, 0x00, 0x00],
-                    ],
-                )
-            }
-        };
+        let palettes = palette_table::palette_fill_from_hash(hash.0, title[3]);
 
-        self.dmg_colorized_bg_palette = palettes.0;
-        self.dmg_colorized_obj_palette[0] = palettes.1;
-        self.dmg_colorized_obj_palette[1] = palettes.2;
+        self.dmg_colorized_bg_palette = palettes[0];
+        self.dmg_colorized_obj_palette[0] = palettes[1];
+        self.dmg_colorized_obj_palette[1] = palettes[2];
     }
 
     pub fn clock(&mut self, bus: &mut PpuBus) {
