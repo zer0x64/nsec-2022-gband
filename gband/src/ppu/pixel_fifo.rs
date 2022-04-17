@@ -37,7 +37,7 @@ impl PixelFifo {
     pub fn load(&mut self, value: [u16; 8]) {
         for i in 0..8 {
             // Only overwrite transparent pixels
-            if self.fifo[i] & 3 == 0 {
+            if self.fifo[i] & 0x300 == 0 {
                 self.fifo[i] = value[i];
             }
         }

@@ -543,7 +543,7 @@ impl Ppu {
 
                             // Add palette and priority bits
                             for b in &mut state.buffer {
-                                *b |= (sprite_properties & 0x90) as u16;
+                                *b |= sprite_properties as u16;
                             }
 
                             self.sprite_pixel_pipeline.load(state.buffer);
@@ -588,8 +588,8 @@ impl Ppu {
                     let sprite_palette = (sprite_pixel as usize & 0x10) >> 4;
                     let bg_over_obj = (sprite_pixel & 0x80) == 0x80;
 
-                    let pixel = if (sprite_pixel & 3 == 0)
-                        || (bg_over_obj && (background_pixel & 3 != 0))
+                    let pixel = if (sprite_pixel & 0x300 == 0)
+                        || (bg_over_obj && (background_pixel & 0x300 != 0))
                     {
                         // Pixel is transparent or under the background. Rendering background instead
                         // Index the pixel in the palette
@@ -598,7 +598,7 @@ impl Ppu {
                             .contains(LcdControl::BACKGROUND_WINDOW_ENABLE_PRIORITY)
                         {
                             let index = (self.dmg_bg_palette
-                                >> ((background_pixel as u8 & 0x3) << 1))
+                                >> (((background_pixel >> 8) as u8 & 3) << 1))
                                 & 0x3;
                             &self.dmg_colorized_bg_palette[index as usize]
                         } else {
@@ -610,7 +610,7 @@ impl Ppu {
                         // Renderng the sprite pixel
                         // Index the pixel in the palette
                         let index = (self.dmg_obj_palette[sprite_palette]
-                            >> ((sprite_pixel as u8 & 0x3) << 1))
+                            >> (((sprite_pixel >> 8) as u8 & 3) << 1))
                             & 0x3;
 
                         &self.dmg_colorized_obj_palette[sprite_palette][index as usize]
@@ -765,7 +765,7 @@ impl Ppu {
 
         // Put the tile data where it belongs in the buffer
         for val in &mut state.buffer {
-            *val |= (tile_data as u16 & 1) << plane;
+            *val |= (tile_data as u16 & 1) << (8 | plane);
             tile_data >>= 1;
         }
 
