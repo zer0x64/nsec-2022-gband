@@ -62,7 +62,7 @@ impl TimerRegisters {
                 if self.interrupt_cycle_countdown == 1 {
                     self.counter = data;
                 }
-            },
+            }
 
             // Control
             0xFF07 => self.control.bits = data & 0x07,
