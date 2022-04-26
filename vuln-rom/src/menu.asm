@@ -135,6 +135,11 @@ MenuMoveCursor:
     ret
 
 HandleAPress:
+    ; Check if all buttons are pressed at once.
+    ; This will help the bot get too the serial state faster
+    xor %1111
+    jr z, :++
+
     ; We chose the next step and exit this state
     ld b, GAMESTATE_MAP
     ld a, [menuCursorPosition]
@@ -151,6 +156,11 @@ HandleAPress:
     ld [shadowOAM], a
 
     ; Exit the menu state
+    ret
+:
+    ; We skip directly to the serial state
+    ld a, GAMESTATE_SERIAL
+    ld [gameState], a
     ret
 
 SECTION FRAGMENT "Menu", ROMX, ALIGN[8]
