@@ -49,7 +49,11 @@ impl Component for Emulator {
 
         html! {
             <div onkeydown={onkeydown} onkeyup={onkeyup} tabIndex="0">
-                <canvas width=160 height=144 ref={self.canvas.clone()}></canvas>
+                <canvas width="160" height="144" style="height:50vh;
+                image-rendering: -moz-crisp-edges;
+                image-rendering: -o-crisp-edges;
+                image-rendering: -webkit-optimize-contrast;
+                -ms-interpolation-mode: nearest-neighbor;" ref={self.canvas.clone()}></canvas>
             </div>
         }
     }
