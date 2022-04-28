@@ -48,7 +48,7 @@ impl Component for Emulator {
         let onkeyup = ctx.link().callback(EmulatorMessage::KeyUp);
 
         html! {
-            <div {onkeydown} {onkeyup}>
+            <div onkeydown={onkeydown} onkeyup={onkeyup} tabIndex="0">
                 <canvas width=160 height=144 ref={self.canvas.clone()}></canvas>
             </div>
         }
