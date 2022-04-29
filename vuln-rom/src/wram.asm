@@ -34,6 +34,17 @@ joypadDpadOld::
     DB
 joypadButtonsOld::
     DB
+; Used to store the serial state
+serialConnectionState::
+    DB
+serialReceiveData::
+    DB
+serialSendData::
+    DB
+serialReceivedNewData::
+    DB
+otherPlayerNameLength::
+    DB
 ; From here forward, we can declare state-specific variables and they can overlap
 copyingSGBTileDataState::
 menuCursorPosition::

@@ -107,7 +107,7 @@ Init::
     ld bc, $A0
     call MemSet
 
-    ld a, IEF_VBLANK            ; The only interupt we want is the VBLANK
+    ld a, IEF_VBLANK | IEF_SERIAL           ; The only interupt we want is the VBLANK
     ld [rIE], a
 
     ld a, AUDENA_OFF            ; Sound OFF since we don't use it
