@@ -35,6 +35,8 @@ joypadDpadOld::
 joypadButtonsOld::
     DB
 ; Used to store the serial state
+serialState::
+    DB
 serialConnectionState::
     DB
 serialReceiveData::

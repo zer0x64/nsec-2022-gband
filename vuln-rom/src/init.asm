@@ -570,11 +570,11 @@ DB $7c, $6b, $87, $45, $23, $db, $65, $99, $11, $ae, $f3, $a7, $42, $b9, $48, $0
 cgbBackgroundPalette::
 ; Defaults to a greyscale palette
 .bg0
-DW $FFFF, $5294, $294a, $0000
+DW $FFFF, $0279, $0013, $0000
 .bg1
 DW $ABAB, $7fff, $001f, $0000
 .bg2
-DW $8888, $9999, $AAAA, $BBBB
+DW $ABAB, $0279, $4C00, $0000
 .bg3
 DW $CCCC, $DDDD, $EEEE, $FFFF
 .bg4

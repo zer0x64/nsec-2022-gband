@@ -1,5 +1,10 @@
 INCLUDE "constants.inc"
 
+SERIAL_STATE_WAITING_TO_PRESS_A = 0
+SERIAL_STATE_WAITING_FOR_CLIENT = 1
+SERIAL_STATE_TRANSFERING = 2
+SERIAL_STATE_TRANSFER_OVER = 3
+
 SECTION FRAGMENT "Serial transfer", ROMX
 RunSerialMode::
     ; Disable the PPU
@@ -21,52 +26,64 @@ RunSerialMode::
     ld bc, serialTileMap.end - serialTileMap
     call CopyToVRAM
 
-    ;ld a, [isCgb]
-    ;cp 1
-    ;jr nz, .skipAttributeCopy
+    ld a, [isCgb]
+    cp 1
+    jr nz, .skipAttributeCopy
 
     ; GDMA the attribute map
     ; Change VRAM bank
-    ;ld a, 1
-    ;ld [rVBK], a
+    ld a, 1
+    ld [rVBK], a
 
-    ;ld de, menuAttributes
-    ;ld hl, _SCRN0
-    ;ld bc, menuAttributes.end - menuAttributes
-    ;call CopyToVRAM
+    ld de, serialAttributes
+    ld hl, _SCRN0
+    ld bc, serialAttributes.end - serialAttributes
+    call CopyToVRAM
 
     ; Reset VRAM bank
-    ;ld a, 0
-    ;ld [rVBK], a
+    ld a, 0
+    ld [rVBK], a
 
 .skipAttributeCopy
+    ; We disable every sprites
     xor a
     ld [shadowOAM], a
-    ld [shadowOAM + 1], a
-    ld [shadowOAM + 2], a
-    ld [shadowOAM + 3], a
-    ; Cursor Y
-    ;ld a, 16
-    ;ld [shadowOAM], a
 
-    ; Cursor X
-    ;ld a, 8
-    ;ld [shadowOAM + 1], a 
-    
-    ; Cursor tile index
-    ;ld a, $91
-    ;ld [shadowOAM + 2], a
-
-    ; Cursor palette and attribute
-    ;ld a, 0
-    ;ld [shadowOAM + 3], a 
+    ; We set the default game state
+    ld a, SERIAL_STATE_WAITING_TO_PRESS_A
+    ld [serialState], a
 
     ; Turn LDC on
     ld a, LCDC_DEFAULT
     ld [rLCDC], a
     ei
 
-.connectionLoop
+.loop
+    ld a, [serialState]
+    cp SERIAL_STATE_WAITING_TO_PRESS_A
+    jr z, .waitingToPressA
+
+    cp SERIAL_STATE_WAITING_FOR_CLIENT
+    jr z, .waitingForClient
+
+    cp SERIAL_STATE_TRANSFERING
+    jr z, .waitingForClient
+
+.waitingToPressA
+    ; Check if connection
+    ld a, [serialConnectionState]
+    cp SERIAL_CONNECTION_STATE_EXTERNAL
+    jr nz, :+
+
+    ; Client is connected, update the state
+    ld a, SERIAL_STATE_TRANSFERING
+    ld [serialState], a
+    jr .render
+:
+    ; Not connected yet
+    ld a, SERIAL_CONNECTION_STATE_UNCONNECTED
+    ld [serialConnectionState], a
+
     ; We update the joypad state
     call ReadJoypad
 
@@ -81,8 +98,10 @@ RunSerialMode::
     bit 0, a
 
     ; If a is pressed, start with internal clock
-    jr nz, .startWithInternalClock
-
+    jr z, :+
+    ld a, SERIAL_STATE_WAITING_FOR_CLIENT
+    ld [serialState], a
+:
     ; Else, wait for connection with external clock
     ld a, SERIAL_CONNECTION_STATE_INTERNAL ; Tell the other to connect as internal
     ldh [rSB], a
@@ -90,20 +109,15 @@ RunSerialMode::
     ld [serialReceiveData], a
     ld a, SCF_START
     ldh [rSC], a
+    
+    jr .render
 
+.render
     call WaitVblank
 
-    ; Check if connection
-    ld a, [serialConnectionState]
-    cp SERIAL_CONNECTION_STATE_EXTERNAL
-    jr z, .establishedConnection
+    jr .loop
 
-    ld a, SERIAL_CONNECTION_STATE_UNCONNECTED
-    ld [serialConnectionState], a
-
-    jr .connectionLoop
-
-.startWithInternalClock
+.waitingForClient
     ld a, SERIAL_CONNECTION_STATE_INTERNAL
     ld [serialConnectionState], a
 
@@ -120,14 +134,9 @@ RunSerialMode::
     jr z, :-
     ld a, [serialReceiveData]
     and a
-    jr nz, .startWithInternalClock
+    jr nz, .render
 
-    ; We are good to go
-.establishedConnection
-    xor a
-    call SerialSendByte
-    call WaitVblank
-
+.transfering
     xor a
     call SerialSendByte
 
@@ -223,5 +232,10 @@ WaitVblank:
 
 SECTION FRAGMENT "Serial transfer", ROMX, ALIGN[8]
 serialTileMap:
-    db "Hello there, press A to continue"
+INCBIN "res/serial_tilemap.bin"
 .end
+
+serialAttributes:
+INCBIN "res/serial_attributes.bin"
+.end
+
