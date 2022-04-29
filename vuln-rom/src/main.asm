@@ -144,7 +144,7 @@ RunGame::
     ld a, [mapState]
 
     cp MAP_STATE_RUNNING
-    jp z, .mainLoop
+    jr z, .mainLoop
 
     cp MAP_STATE_EXITING
     jr z, .exit
@@ -187,75 +187,7 @@ RunGame::
     jr .render
 .talkingToNpc
     ; interaction with serial NPC
-    ; We update the joypad state
-    call ReadJoypad
-
-    ; We check newly pressed buttons
-    ld a, [joypadButtons]
-    ld b, a
-    ld a, [joypadButtonsOld]
-
-    call GetNewlyPushedButtons
-
-    bit 1, a
-    jr nz, :++
-    bit 0, a
-    jr nz, :+
-
-    ; now check newly pressed dpad inputs
-    ld a, [joypadDpad]
-    ld b, a
-    ld a, [joypadDpadOld]
-
-    call GetNewlyPushedButtons
-
-    ; we check if left or right are pressed
-    and %00000011
-    cp 0
-
-    jr nz, :+++
-
-    jr .render
-
-: ; A pressed
-    ld a, [npcCursorPosition]
-
-    cp DEFAULT_NPC_CURSOR_POSITION ; here I kinda just assume the default is No...
-    jr nz, :+++
-
-: ; exit dialog (or B pressed)
-    ; exiting dialog, No selected
-    ld a, MAP_STATE_RUNNING
-    ld [mapState], a
-    
-    ; Disable the window
-    ld a, 0
-    ld [shadowWindow], a
-
-    ; reset cursor position for next time
-    ld a, DEFAULT_NPC_CURSOR_POSITION
-    ld [npcCursorPosition], a
-
-    jr .render
-
-: ; move cursor
-    ld a, [npcCursorPosition]
-    xor %00001000
-    ld [npcCursorPosition], a
-    
-    jr .render
-
-: ; confirmed dialog, Yes selected
-    call ClearTextboxText
-
-    ld a, MAP_STATE_EXITING
-    ld [mapState], a
-
-    ld a, GAMESTATE_SERIAL
-    ld [gameState], a
-
-    xor a
-    ld [shadowWindow], a
+    call NpcInteraction
 
     jr .render
 .mainLoop
@@ -298,7 +230,7 @@ RunGame::
  
     ; Print window
     call DrawWindow
-    jp .loop
+    jr .loop
 
 MoveCharacter:
     ld a, [joypadDpad]
@@ -502,6 +434,75 @@ SetAnimationCycle:
     ld a, [characterDirection]
     and %11110000
     ld [characterDirection], a
+    
+    ret
+
+NpcInteraction:
+    ; We update the joypad state
+    call ReadJoypad
+
+    ; We check newly pressed buttons
+    ld a, [joypadButtons]
+    ld b, a
+    ld a, [joypadButtonsOld]
+
+    call GetNewlyPushedButtons
+
+    bit 1, a
+    jr nz, :++
+    bit 0, a
+    jr nz, :+
+
+    ; now check newly pressed dpad inputs
+    ld a, [joypadDpad]
+    ld b, a
+    ld a, [joypadDpadOld]
+
+    call GetNewlyPushedButtons
+
+    ; we check if left or right are pressed
+    and %00000011
+    cp 0
+
+    ret z
+
+    ld a, [npcCursorPosition]
+    xor %00001000
+    ld [npcCursorPosition], a
+    
+    ret
+
+: ; A pressed
+    ld a, [npcCursorPosition]
+
+    cp DEFAULT_NPC_CURSOR_POSITION ; here I kinda just assume the default is No...
+    jr nz, :++
+
+: ; No selected (or B pressed), exiting dialog
+    ld a, MAP_STATE_RUNNING
+    ld [mapState], a
+    
+    ; Disable the window
+    ld a, 0
+    ld [shadowWindow], a
+
+    ; reset cursor position for next time
+    ld a, DEFAULT_NPC_CURSOR_POSITION
+    ld [npcCursorPosition], a
+
+    ret
+
+: ; Yes selected, confirmed dialog
+    call ClearTextboxText
+
+    ld a, MAP_STATE_EXITING
+    ld [mapState], a
+
+    ld a, GAMESTATE_SERIAL
+    ld [gameState], a
+
+    xor a
+    ld [shadowWindow], a
     
     ret
 
