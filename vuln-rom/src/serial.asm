@@ -5,6 +5,8 @@ SERIAL_STATE_WAITING_FOR_CLIENT = 1
 SERIAL_STATE_TRANSFERING = 2
 SERIAL_STATE_TRANSFER_OVER = 3
 
+TEXTBOX_LINE_LENGTH = 14
+
 SECTION FRAGMENT "Serial transfer", ROMX
 RunSerialMode::
     ; Disable the PPU
@@ -53,6 +55,14 @@ RunSerialMode::
     ld a, SERIAL_STATE_WAITING_TO_PRESS_A
     ld [serialState], a
 
+    ; We set the initial text to display
+    call ClearTextboxText
+
+    ld de, textPressAToInitializeTransfer
+    ld hl, textToDisplay
+    ld bc, textPressAToInitializeTransfer.end - textPressAToInitializeTransfer
+    call MemCpy
+
     ; Turn LDC on
     ld a, LCDC_DEFAULT
     ld [rLCDC], a
@@ -67,7 +77,10 @@ RunSerialMode::
     jr z, .waitingForClient
 
     cp SERIAL_STATE_TRANSFERING
-    jr z, .waitingForClient
+    jr z, .transfering
+
+    cp SERIAL_STATE_TRANSFER_OVER
+    jp z, .done
 
 .waitingToPressA
     ; Check if connection
@@ -78,6 +91,15 @@ RunSerialMode::
     ; Client is connected, update the state
     ld a, SERIAL_STATE_TRANSFERING
     ld [serialState], a
+
+    ; We update the text to display
+    call ClearTextboxText
+
+    ld de, textTransferingData
+    ld hl, textToDisplay
+    ld bc, textTransferingData.end - textTransferingData
+    call MemCpy
+
     jr .render
 :
     ; Not connected yet
@@ -101,6 +123,16 @@ RunSerialMode::
     jr z, :+
     ld a, SERIAL_STATE_WAITING_FOR_CLIENT
     ld [serialState], a
+
+    ; We update the text to display
+    call ClearTextboxText
+
+    ld de, textTransferingData
+    ld hl, textToDisplay
+    ld bc, textTransferingData.end - textTransferingData
+    call MemCpy
+
+    jr .render
 :
     ; Else, wait for connection with external clock
     ld a, SERIAL_CONNECTION_STATE_INTERNAL ; Tell the other to connect as internal
@@ -114,7 +146,6 @@ RunSerialMode::
 
 .render
     call WaitVblank
-
     jr .loop
 
 .waitingForClient
@@ -137,15 +168,30 @@ RunSerialMode::
     jr nz, .render
 
 .transfering
-    xor a
-    call SerialSendByte
-
     call ExchangeName
-    jr .done
+
+    ; We update the text to display
+    call ClearTextboxText
+
+    ld de, textTransferingDone
+    ld hl, textToDisplay
+    ld bc, textTransferingDone.end - textTransferingDone
+    call MemCpy
+
+    ; We put in the other player name
+    ld de, localVariables
+    ld hl, textToDisplay + (textTransferingDone.end - textTransferingDone)
+    ld b, 0
+    ld a, [otherPlayerNameLength]
+    ld c, a
+    call MemCpy
+
+    ld a, SERIAL_STATE_TRANSFER_OVER
+    ld [serialState], a
+    jr .render
 
 .done
-    halt
-    jr .done
+    jr .render
 
 SerialSendByte:
     ld [serialSendData], a
@@ -219,8 +265,22 @@ ExchangeNameLength:
 
     ret
 
+ClearTextboxText:
+    ; We set the textbox text to be empty
+    xor a
+    ld hl, textToDisplay
+    ld bc, TEXTBOX_LINE_LENGTH * 8
+    call MemSet
+
+    ret
+
 WaitVblank:
     ; Lock so we wait for the frame to end
+    push af
+    push bc
+    push de
+    push hl
+
     ld a, 1
     ld [waitForFrame], a;
 .waitForFrame
@@ -228,7 +288,59 @@ WaitVblank:
     ld a, [waitForFrame]
     cp 0
     jr nz, .waitForFrame
+
+    ; Rendering code goes here, right after vblank
+    ld de, textToDisplay
+    ld hl, _SCRN0 + $A3
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $C3
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $E3
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $103
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $123
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $143
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $163
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    ld hl, _SCRN0 + $183
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemCpy
+
+    pop hl
+    pop de
+    pop bc
+    pop af
     ret
+
+textPressAToInitializeTransfer:
+    DB "Press A to    initialize    transfer", 1, 1, 1
+.end
+
+textTransferingData:
+    DB "Transfering   data", 1, 1, 1
+.end
+
+textTransferingDone:
+    DB "Transfer done!Welcome "
+.end
+
 
 SECTION FRAGMENT "Serial transfer", ROMX, ALIGN[8]
 serialTileMap:

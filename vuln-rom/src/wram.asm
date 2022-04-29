@@ -73,6 +73,12 @@ wStack::
 	ds STACK_SIZE   ; Define a stack here. I make sure it's after "localVariables" so a buffer overflow can overwrite a function pointer here
 wStackBottom::
 
+; We put this in another section to make sure it's not too large to overflow the stack
+SECTION "Text to display", WRAM0
+textToDisplay::
+    DS $80
+.end
+
 SECTION "Shadow", WRAM0
 shadowScrollX::
     DB
