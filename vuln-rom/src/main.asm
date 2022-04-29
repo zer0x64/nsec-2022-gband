@@ -295,28 +295,8 @@ RunGame::
     ld a, [waitForFrame]
     cp a, 0
     jr nz, .waitForFrame
-
-    ld a, [mapState]
-    cp MAP_STATE_NPC
-    jr z, :+
-    jr :++
-
-: ; talking to NPC
-    ld de, yesNoText
-    ld hl, _SCRN1 + $61
-    ld bc, yesNoText.end - yesNoText
-    call MemCpy
-
-    ; place cursor in NPS window
-    ld a, [npcCursorPosition]
-    ld hl, _SCRN1
-    ld l, a
-
-    ; cursor tile index
-    ld a, $91
-    ld [hl], a
-
-: ; Print window
+ 
+    ; Print window
     call DrawWindow
     jp .loop
 
@@ -921,6 +901,34 @@ DrawWindow:
     ld hl, _SCRN1 + $41
     ld bc, TEXTBOX_LINE_LENGTH
     call MemCpy
+
+    ; Check if we're talking to the NPC for the 3rd line
+    ld a, [mapState]
+    cp MAP_STATE_NPC
+    jr z, :+
+    
+    ; Not talking to NPC
+    ; Clear the yes/no text
+    xor a
+    ld hl, _SCRN1 + $61
+    ld bc, TEXTBOX_LINE_LENGTH
+    call MemSet
+
+    ret
+: ; talking to NPC
+    ld de, yesNoText
+    ld hl, _SCRN1 + $61
+    ld bc, yesNoText.end - yesNoText
+    call MemCpy
+
+    ; place cursor in NPS window
+    ld a, [npcCursorPosition]
+    ld hl, _SCRN1
+    ld l, a
+
+    ; cursor tile index
+    ld a, $91
+    ld [hl], a
 
     ret
 
