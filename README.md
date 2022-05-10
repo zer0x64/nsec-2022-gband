@@ -8,6 +8,13 @@ The contestants had to reverse engineer the emulator and a ROM to find a flag an
 
 ## How to build and run.
 
+### Requirements
+The repository uses Git LFS, so you need it to access non-text files in the repo.  
+You also need to have a working Rust toolchain set up, and on linux you need `libudev` for gamepad support.  
+The emulator uses `wgpu`, which translates graphics call to Vulkan/DirectX12/Metal. Note that only those recent graphic APIs are well supported for now.  
+
+Building roms requires `make`, python and the RGBDS toolchain available in your PATH.  
+
 ### Vulnerable rom
 Refer to `vuln-rom/README.md`. Note that a prebuilt version can be found in `gband-webclient/roms/super-myco-boi.gbc`.
 
