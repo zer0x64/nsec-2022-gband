@@ -68,7 +68,7 @@ impl Component for App {
                 <h4>{ "Play as Myco Boi with your friends!" }</h4>
 
                 <p>{ "When launching GBAND, you can connect to the game servers using this command:" }</p>
-                <code>{ "./gband -c \"http://gband.ctf:8080\" path/to/rom" }</code>
+                <code>{ "./gband -c \"[9000:6c1:bb:992:216:3eff:fef4:94cb]:8080\" path/to/rom" }</code>
                 <p>{ "You can then adventure through the magical mushroom forest and talk to the elder mushroom mans to connect with other players." }</p>
                 <p>{ "Note that for now, the multiplayer servers are only able to handle Super Myco Boi™ using the native version of GBAND. It won't work using the web version." }</p>
 
