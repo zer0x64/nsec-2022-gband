@@ -1,6 +1,7 @@
 # Flag 1 - ROM Reverse Engineering
 
-Value: 2 points  
+Value: 4 points  
+Solves: 0   :'(  
 
 This flag is hidden inside the ROM.  
 

@@ -1,5 +1,6 @@
 # Flag 3 - Link Cable Buffer Overflow
 Value: 8 points  
+Solves: 0  :'(  
 
 This flag is pretty easy to find, but hard to exploit. Basically, if you use the provided emulator and rom, connect to the victim
 and talk to the elder mushroom in the magic forest, you can initiate a serial transfer with the victim to send both player names to one another.  

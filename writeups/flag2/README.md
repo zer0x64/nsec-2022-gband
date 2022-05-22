@@ -1,5 +1,6 @@
 # Flag 2 - Emulator Reverse Engineering
 Value: 6 points  
+Solves: 1  
 
 This flag can be fetched from the server emulator by using a backdoor inside the emulator.  
 
